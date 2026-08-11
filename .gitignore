@@ -1,0 +1,23 @@
+# Secrets
+.env
+info-ai-bot.md
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+
+# Logs
+logs/*.log
+
+# DB files
+*.db
+*.sqlite3
