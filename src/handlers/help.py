@@ -14,6 +14,8 @@ HELP_TEXT = (
     "• /rate <b>USD</b> — курс валюты (USD, EUR, CNY...)\n"
     "• /stock <b>AAPL</b> — цена акции (SPX, DJI — индексы)\n"
     "• /crypto <b>BTC</b> — цена криптовалюты\n"
+    "• /trending — топ трендовых монет\n"
+    "• /news <b>AAPL</b> — последние новости по тикеру\n"
     "• /analyze <b>BTC</b> — AI-анализ актива\n"
     "• /help — эта справка\n\n"
     "Источники: ЦБ РФ (валюты), Finnhub (акции), CoinGecko (крипта).\n"

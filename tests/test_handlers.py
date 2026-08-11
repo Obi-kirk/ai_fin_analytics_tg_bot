@@ -2,9 +2,15 @@
 
 import pytest
 
-from src.handlers.crypto import COIN_RE, fetch_crypto, format_crypto
+from src.handlers.crypto import COIN_RE, fetch_crypto, format_crypto, format_trending
 from src.handlers.rate import format_fx
-from src.handlers.stock import INDEX_ALIASES, TICKER_RE, format_stock
+from src.handlers.stock import (
+    INDEX_ALIASES,
+    TICKER_RE,
+    _format_news_date,
+    format_news,
+    format_stock,
+)
 from src.services.financial_api import FxQuote, StockQuote
 
 
@@ -86,6 +92,60 @@ async def test_fetch_crypto_uses_alias(monkeypatch) -> None:
     monkeypatch.setattr(module, "CoinGeckoClient", FakeGecko)
     quote = await fetch_crypto("SOL")
     assert quote.price == pytest.approx(76.25)
+
+
+class TestTrending:
+    def test_format_trending(self) -> None:
+        coins = [
+            {"name": "Bitcoin", "symbol": "BTC", "rank": 1, "price_btc": 1.0},
+            {"name": "Ethereum", "symbol": "ETH", "rank": 2, "price_btc": 0.05},
+        ]
+        text = format_trending(coins)
+        assert "Тренды CoinGecko" in text
+        assert "Bitcoin <b>(BTC)</b>" in text
+        assert "ранг #1" in text
+
+    def test_format_trending_limit_10(self) -> None:
+        coins = [
+            {"name": f"Coin{i}", "symbol": f"C{i}", "rank": i, "price_btc": 1.0}
+            for i in range(1, 15)
+        ]
+        text = format_trending(coins)
+        assert "Coin1" in text
+        assert "Coin14" not in text  # показываем только топ-10
+
+
+class TestNews:
+    def test_format_news(self) -> None:
+        news = [
+            {
+                "headline": "Apple выпустила новый продукт",
+                "url": "https://example.com/apple",
+                "datetime": 1780000000,
+            },
+            {"headline": "Без ссылки", "url": "", "datetime": None},
+        ]
+        text = format_news("AAPL", news)
+        assert "Новости AAPL" in text
+        assert "Apple выпустила новый продукт" in text
+        assert "example.com" in text
+
+    def test_format_news_limit(self) -> None:
+        news = [
+            {"headline": f"Новость {i}", "url": f"https://e.com/{i}", "datetime": None}
+            for i in range(8)
+        ]
+        text = format_news("AAPL", news, limit=3)
+        assert "Новость 1" in text
+        assert "Новость 5" not in text
+
+    def test_format_news_empty(self) -> None:
+        text = format_news("AAPL", [])
+        assert "Новостей за этот период нет" in text
+
+    def test_format_news_date(self) -> None:
+        assert _format_news_date(None) == "—"
+        assert _format_news_date(1780000000) == "28.05"
 
 
 class TestDisclaimer:

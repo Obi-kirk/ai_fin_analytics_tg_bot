@@ -77,6 +77,46 @@ async def fetch_crypto(symbol: str) -> StockQuote:
             raise
 
 
+async def fetch_trending() -> list[dict]:
+    """Топ трендовых монет CoinGecko (кэшируется на 10 минут)."""
+    async with make_session() as session:
+        gecko = CoinGeckoClient(get_settings().coingecko_api_key)
+        try:
+            return await gecko.get_trending(session)
+        except Exception:
+            log.exception("Не удалось получить тренды от CoinGecko")
+            raise
+
+
+def format_trending(coins: list[dict]) -> str:
+    """Форматирует топ трендовых монет для Telegram (HTML)."""
+    lines = ["🔥 <b>Тренды CoinGecko</b>\n"]
+    for i, coin in enumerate(coins[:10], start=1):
+        rank = f"#{coin['rank']}" if coin.get("rank") else "—"
+        lines.append(f"{i}. {coin['name']} <b>({coin['symbol']})</b> — ранг {rank}")
+    lines.append("\nПроверь цену: /crypto SYMBOL или AI-анализ в меню.")
+    return "\n".join(lines)
+
+
+@router.message(Command("trending"))
+async def cmd_trending(message: Message, cache: TTLCache) -> None:
+    """Показывает топ трендовых криптовалют."""
+    settings = get_settings()
+    try:
+        coins = await cache.get_or_set(
+            "trending", fetch_trending, settings.cache_ttl_stock_seconds
+        )
+    except ApiRateLimitError:
+        await message.answer(
+            "⚠️ Превышен лимит запросов к API крипты. Попробуй через минуту."
+        )
+        return
+    except Exception:  # noqa: BLE001 — граница внешнего API, ошибка уже залогирована
+        await message.answer("😔 Не удалось получить тренды. Попробуй позже.")
+        return
+    await message.answer(format_trending(coins))
+
+
 def format_crypto(symbol: str, quote: StockQuote) -> str:
     """Форматирует цену криптовалюты для Telegram (HTML)."""
     sign = "+" if quote.change_percent >= 0 else ""

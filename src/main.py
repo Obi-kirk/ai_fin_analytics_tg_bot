@@ -27,13 +27,17 @@ from src.handlers.stock import router as stock_router
 from src.middleware.throttling import ThrottlingMiddleware
 from src.middleware.users import BotStats, UsersMiddleware
 from src.services.cache import TTLCache
+from src.utils.redact import RedactFormatter
 
 log = logging.getLogger(__name__)
 
 
 def setup_logging() -> None:
-    """Настраивает логирование: консоль + ротация файлов (AGENTS.md п.8)."""
-    fmt = logging.Formatter(
+    """Настраивает логирование: консоль + ротация файлов (AGENTS.md п.8).
+
+    PII (телефоны, email, номера карт) маскируются форматтером (п.9).
+    """
+    fmt = RedactFormatter(
         "%(asctime)s %(levelname)s %(name)s: %(message)s", datefmt="%H:%M:%S"
     )
     root = logging.getLogger()
@@ -57,7 +61,9 @@ async def _setup_bot_commands(bot: Bot, admin_id: int | None) -> None:
         BotCommand(command="rate", description="Курс валюты: /rate USD"),
         BotCommand(command="stock", description="Цена акции: /stock AAPL"),
         BotCommand(command="crypto", description="Цена крипты: /crypto BTC"),
-        BotCommand(command="analyze", description="AI-анализ (скоро)"),
+        BotCommand(command="trending", description="Топ трендовых монет"),
+        BotCommand(command="news", description="Новости по тикеру: /news AAPL"),
+        BotCommand(command="analyze", description="AI-анализ: /analyze BTC"),
         BotCommand(command="help", description="Справка"),
     ]
     await bot.set_my_commands(user_commands)

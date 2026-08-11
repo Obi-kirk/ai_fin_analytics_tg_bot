@@ -318,3 +318,22 @@ class CoinGeckoClient:
             raise LookupError(
                 f"CoinGecko вернул некорректную историю для {coin_id}"
             ) from exc
+
+    async def get_trending(
+        self, session: aiohttp.ClientSession
+    ) -> list[dict[str, Any]]:
+        """Топ-15 трендовых монет CoinGecko."""
+        url = f"{self.BASE_URL}/search/trending"
+        payload = await self._get(url, {}, session)
+        coins = []
+        for entry in payload.get("coins") or []:
+            item = entry.get("item") or {}
+            coins.append(
+                {
+                    "name": item.get("name"),
+                    "symbol": item.get("symbol"),
+                    "rank": item.get("market_cap_rank"),
+                    "price_btc": item.get("price_btc"),
+                }
+            )
+        return coins

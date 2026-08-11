@@ -1,7 +1,8 @@
-"""Обработчик команды /stock — котировки акций и индексов (Finnhub)."""
+"""Обработчик /stock и /news — котировки акций и новости (Finnhub)."""
 
 import logging
 import re
+from datetime import datetime, timezone
 
 from aiogram import Router
 from aiogram.filters import Command
@@ -78,6 +79,74 @@ async def fetch_stock(symbol: str) -> StockQuote:
         except Exception:
             log.exception("Не удалось получить котировку %s от Finnhub", symbol)
             raise
+
+
+async def fetch_news(symbol: str) -> list[dict]:
+    """Свежие новости по тикеру Finnhub."""
+    async with make_session() as session:
+        client = FinnhubClient(get_settings().finnhub_api_key)
+        try:
+            return await client.get_news(symbol, session)
+        except Exception:
+            log.exception("Не удалось получить новости %s от Finnhub", symbol)
+            raise
+
+
+def _format_news_date(ts: int | None) -> str:
+    """Дата новости в формате ДД.ММ (UTC)."""
+    if not ts:
+        return "—"
+    return datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%d.%m")
+
+
+def format_news(symbol: str, news: list[dict], limit: int = 5) -> str:
+    """Форматирует новости по тикеру для Telegram (HTML)."""
+    lines = [f"📰 <b>Новости {symbol}</b> (за 10 дней)\n"]
+    shown = 0
+    for item in news:
+        headline = (item.get("headline") or "").strip()
+        url = item.get("url")
+        if not headline or not url:
+            continue
+        date = _format_news_date(item.get("datetime"))
+        link = f'<a href="{url}">читать</a>' if url else ""
+        lines.append(f"• {date} — {headline} {link}")
+        shown += 1
+        if shown >= limit:
+            break
+    if not shown:
+        lines.append("Новостей за этот период нет.")
+    return "\n".join(lines)
+
+
+@router.message(Command("news"))
+async def cmd_news(message: Message, cache: TTLCache) -> None:
+    """Последние новости по тикеру, например: /news AAPL."""
+    args = message.text.split(maxsplit=1)
+    if len(args) < 2:
+        await message.answer("Укажи тикер, например: /news AAPL или /news NVDA")
+        return
+    symbol = args[1].strip().upper()
+    if not TICKER_RE.match(symbol):
+        await message.answer("Некорректный тикер.")
+        return
+
+    settings = get_settings()
+    try:
+        news = await cache.get_or_set(
+            f"stock:news:{symbol}",
+            lambda: fetch_news(symbol),
+            settings.cache_ttl_fundamental_seconds,
+        )
+    except ApiRateLimitError:
+        await message.answer(
+            "⚠️ Превышен лимит запросов к API новостей. Попробуй через минуту."
+        )
+        return
+    except Exception:  # noqa: BLE001 — граница внешнего API, ошибка уже залогирована
+        await message.answer("😔 Не удалось получить новости. Попробуй позже.")
+        return
+    await message.answer(format_news(symbol, news))
 
 
 def format_stock(quote: StockQuote) -> str:
