@@ -27,6 +27,15 @@ ALLOWED_API_DOMAINS = (
 CBR_CURRENCIES = frozenset({"USD", "EUR", "GBP", "CNY", "JPY"})
 
 BASE_HEADERS = {"User-Agent": "ai-parser-bot/0.1 (finance telegram bot)"}
+HTTP_TIMEOUT_SECONDS = 10
+
+
+def make_session() -> aiohttp.ClientSession:
+    """HTTP-сессия с таймаутом, чтобы бот не зависал на внешних API."""
+    return aiohttp.ClientSession(
+        timeout=aiohttp.ClientTimeout(total=HTTP_TIMEOUT_SECONDS),
+        headers=BASE_HEADERS,
+    )
 
 
 def _check_domain(url: str) -> None:

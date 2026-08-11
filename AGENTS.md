@@ -3,29 +3,40 @@
 
 ## Проект
 - **Путь**: /home/obihiro/Proj/ai_parser/
-- **Название**: AI-Parser
-- **Python**: 3.11+ (рекомендуется 3.14+)
-- **ОС**: Linux / Ubuntu (или другая)
-- **Основные библиотеки**: aiogram (или python-telegram-bot), SQLAlchemy (опционально), asyncpg (опционально), python-dotenv
-- **База данных**: PostgreSQL (опционально), может использоваться другая БД
+- **Название**: AI-Parser (финансовая аналитика: валюты, акции, крипта)
+- **Python**: 3.14
+- **ОС**: Linux / Ubuntu
+- **Основные библиотеки**: aiogram 3, aiohttp, SQLAlchemy 2 (async), asyncpg, pydantic-settings
+- **База данных**: PostgreSQL (SQLite допускается для отладки)
 
-## Структура проекта (рекомендуемая)
+## Структура проекта (актуальная)
 src/
-├── handlers/ # Обработчики команд и колбэков
-├── services/ # Бизнес-логика (внешние API, работа с БД, утилиты)
-├── database/ # Модели, миграции, подключение к БД (если используется)
-├── config/ # Настройки, загрузка .env
-├── middleware/ # Промежуточные слои (аутентификация, логирование)
-└── utils/ # Вспомогательные функции (валидация, логирование, санитайзинг)
-tests/ # Модульные тесты (pytest)
-.env # Секреты (НЕ КОММИТИТЬ!)
-requirements.txt # Зависимости (или pyproject.toml)
-Dockerfile # (опционально) для контейнеризации
-README.md
+├── main.py                 # Точка входа: polling, роутеры, middleware, DI
+├── handlers/               # Команды, колбэки, меню
+│   ├── start.py            # /start, меню
+│   ├── help.py             # /help, справка
+│   ├── menu.py             # Reply-меню + inline-подменю тикеров + «Обновить»
+│   ├── rate.py             # /rate — валюты ЦБ РФ
+│   ├── stock.py            # /stock — акции/индексы (Finnhub)
+│   ├── crypto.py           # /crypto — крипта (CoinGecko)
+│   └── errors.py           # Глобальный обработчик ошибок + уведомление админа
+├── services/
+│   ├── financial_api.py    # Клиенты: ЦБ РФ, Finnhub, CoinGecko, FCS (white-list)
+│   ├── cache.py            # In-memory кэш с TTL
+│   └── llm_service.py      # AI-агент (OpenRouter/Groq) — на этапе разработки
+├── database/
+│   └── db.py               # SQLAlchemy async engine, сессии, Base
+├── config/
+│   └── settings.py         # pydantic-settings, загрузка .env
+├── middleware/
+│   └── throttling.py       # Rate limiting (скорость на пользователя)
+└── utils/                  # Вспомогательные функции
+tests/                      # Модульные тесты (pytest, фикстуры без сети)
+.env                        # Секреты (НЕ КОММИТИТЬ!)
+requirements.txt
+pytest.ini
 
-text
-
-## Команды (примеры)
+## Команды
 ```bash
 # Создание виртуального окружения и установка зависимостей
 python -m venv .venv
@@ -35,16 +46,14 @@ pip install -r requirements.txt
 # Запуск бота (polling)
 python -m src.main
 
-# Запуск с автоперезагрузкой (для разработки)
-python -m src.main --reload
-
 # Тесты
 pytest tests/ -v
 
 # Линтинг и форматирование
 black src/ tests/
-isort src/ tests/
+isort --profile black src/ tests/
 ruff check src/ tests/
+```
 Стиль кода
 Форматирование: black (длина строки 88 символов)
 
@@ -69,8 +78,12 @@ Type hints обязательны для всех публичных функц�
 
 text
 TELEGRAM_BOT_TOKEN=ваш_токен_от_BotFather
-DATABASE_URL=postgresql+asyncpg://user:password@localhost/dbname   # если используется БД
-# Другие ключи для внешних сервисов (например, OpenAI, OpenRouter и т.п.) добавляйте по необходимости
+DATABASE_URL=postgresql+asyncpg://user:password@localhost:5432/dbname
+FINNHUB_API_KEY=ключ_finnhub.io       # акции (60 req/мин)
+COINGECKO_API_KEY=ключ_coingecko      # крипта, Demo (100 req/мин, 10k/мес)
+FCS_API_KEY=ключ_fcsapi               # опционально (500 req/мес, без акций на Free)
+OPENROUTER_API_KEY=ключ_openrouter   # AI-агент /analyze
+ADMIN_ID=telegram_id_администратора
 Важно: Все секреты хранятся только в .env, файл .env добавлен в .gitignore.
 
 ⚠️ БЕЗОПАСНОСТЬ (КРИТИЧЕСКИ ВАЖНО)
@@ -129,6 +142,14 @@ DATABASE_URL=postgresql+asyncpg://user:password@localhost/dbname   # если и
 Агент (или бот) должен иметь доступ только к необходимым внешним API:
 
 api.telegram.org (обязательно)
+
+www.cbr.ru (валюты ЦБ РФ)
+
+finnhub.io (акции, 60 req/мин)
+
+api.coingecko.com (крипта)
+
+api-v4.fcsapi.com (опционально, если подписан план FCS API)
 
 api.openrouter.ai, api.groq.com, generativelanguage.googleapis.com (если используются)
 

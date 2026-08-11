@@ -3,7 +3,6 @@
 Запуск: python -m src.main [--reload]
 """
 
-import argparse
 import logging
 import sys
 from logging.handlers import RotatingFileHandler
@@ -16,11 +15,13 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from src.config.settings import get_settings
 from src.database.db import close_db, create_tables
 from src.handlers.crypto import router as crypto_router
+from src.handlers.errors import router as errors_router
 from src.handlers.help import router as help_router
 from src.handlers.menu import router as menu_router
 from src.handlers.rate import router as rate_router
 from src.handlers.start import router as start_router
 from src.handlers.stock import router as stock_router
+from src.middleware.throttling import ThrottlingMiddleware
 from src.services.cache import TTLCache
 
 log = logging.getLogger(__name__)
@@ -60,6 +61,12 @@ async def main() -> None:
     cache.start_gc()
     dp["cache"] = cache  # DI для хендлеров (ключ — имя параметра)
 
+    dp.message.outer_middleware(ThrottlingMiddleware(settings.rate_limit_per_minute))
+    dp.callback_query.outer_middleware(
+        ThrottlingMiddleware(settings.rate_limit_per_minute)
+    )
+
+    dp.include_router(errors_router)
     dp.include_router(start_router)
     dp.include_router(help_router)
     dp.include_router(menu_router)
@@ -79,17 +86,14 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="AI-Parser Telegram Bot")
-    parser.add_argument("--reload", action="store_true", help="автоперезапуск (dev)")
-    args = parser.parse_args()
-
     setup_logging()
-    if args.reload:
-        log.warning("--reload пока не поддерживается в polling-режиме, обычный старт")
-
     import asyncio
+    import sys
 
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
         log.info("Остановка по Ctrl+C")
+    except Exception:
+        log.exception("Критическая ошибка при запуске")
+        sys.exit(1)

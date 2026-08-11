@@ -2,14 +2,13 @@
 
 import logging
 
-import aiohttp
 from aiogram import Router
 from aiogram.filters import Command
 from aiogram.types import Message
 
 from src.config.settings import get_settings
 from src.services.cache import TTLCache
-from src.services.financial_api import CBR_CURRENCIES, CBRClient, FxQuote
+from src.services.financial_api import CBR_CURRENCIES, CBRClient, FxQuote, make_session
 
 log = logging.getLogger(__name__)
 router = Router()
@@ -48,7 +47,7 @@ async def cmd_rate(message: Message, cache: TTLCache) -> None:
 async def fetch_fx(code: str) -> FxQuote:
     """Получает курс из ЦБ РФ через отдельный HTTP-сеанс."""
     code = code.upper()
-    async with aiohttp.ClientSession() as session:
+    async with make_session() as session:
         client = CBRClient()
         try:
             return await client.get_quote(code, session)

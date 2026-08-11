@@ -3,14 +3,13 @@
 import logging
 import re
 
-import aiohttp
 from aiogram import Router
 from aiogram.filters import Command
 from aiogram.types import Message
 
 from src.config.settings import get_settings
 from src.services.cache import TTLCache
-from src.services.financial_api import CoinGeckoClient, StockQuote
+from src.services.financial_api import CoinGeckoClient, StockQuote, make_session
 
 log = logging.getLogger(__name__)
 router = Router()
@@ -59,7 +58,7 @@ async def cmd_crypto(message: Message, cache: TTLCache) -> None:
 async def fetch_crypto(symbol: str) -> StockQuote:
     """Цена монеты через CoinGecko (с демо-ключом, без него — keyless)."""
     gecko_id = COINS.get(symbol, symbol.lower())
-    async with aiohttp.ClientSession() as session:
+    async with make_session() as session:
         gecko = CoinGeckoClient(get_settings().coingecko_api_key)
         try:
             return await gecko.get_quote(gecko_id, session)
