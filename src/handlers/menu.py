@@ -19,6 +19,7 @@ from src.handlers.crypto import fetch_crypto, format_crypto
 from src.handlers.rate import fetch_fx, format_fx
 from src.handlers.stock import fetch_stock, format_stock
 from src.services.cache import TTLCache
+from src.services.financial_api import ApiRateLimitError
 
 log = logging.getLogger(__name__)
 router = Router()
@@ -114,13 +115,15 @@ def submenu_kb(kind: str) -> InlineKeyboardMarkup:
 
 
 def refresh_kb(cache_key: str) -> InlineKeyboardMarkup:
-    """Кнопка «обновить» для сообщения с котировкой."""
+    """Кнопки под ответом: «Обновить» и возврат в подменю."""
+    kind = cache_key.split(":", 1)[0]
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
                     text="🔄 Обновить", callback_data=f"refresh:{cache_key}"
-                )
+                ),
+                InlineKeyboardButton(text="↩️ Меню", callback_data=f"submenu:{kind}"),
             ]
         ]
     )
@@ -165,6 +168,11 @@ async def _quote_and_edit(
     """Берёт данные из кэша и редактирует сообщение с кнопкой обновления."""
     try:
         quote = await cache.get_or_set(cache_key, fetch, ttl)
+    except ApiRateLimitError:
+        await callback.answer(
+            "⚠️ Превышен лимит API. Попробуй через минуту.", show_alert=True
+        )
+        return
     except Exception:  # noqa: BLE001 — граница внешнего API, ошибка уже залогирована
         await callback.answer(
             "😔 Не удалось получить данные. Попробуй позже.", show_alert=True
@@ -231,6 +239,14 @@ async def on_analyse(callback: CallbackQuery) -> None:
         "🤖 AI-анализ ещё в разработке. Совсем скоро!",
         reply_markup=refresh_kb("analyse:soon"),
     )
+
+
+@router.callback_query(F.data.regexp(r"^submenu:(fx|stock|crypto|analyse)$"))
+async def on_submenu(callback: CallbackQuery) -> None:
+    """Возвращает сообщение к подменю выбора (кнопка «↩️ Меню»)."""
+    kind = callback.data.split(":", 1)[1]
+    await callback.message.edit_text(MENU_TITLES[kind], reply_markup=submenu_kb(kind))
+    await callback.answer()
 
 
 @router.callback_query(F.data.startswith("refresh:"))

@@ -11,6 +11,7 @@ from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.types import BotCommand, BotCommandScopeChat
 
 from src.config.settings import get_settings
 from src.database.db import close_db, create_tables
@@ -48,6 +49,33 @@ def setup_logging() -> None:
     root.addHandler(file_handler)
 
 
+async def _setup_bot_commands(bot: Bot, admin_id: int | None) -> None:
+    """Список команд в интерфейсе Telegram: общие и админские (отдельным scope)."""
+    user_commands = [
+        BotCommand(command="start", description="Главное меню"),
+        BotCommand(command="rate", description="Курс валюты: /rate USD"),
+        BotCommand(command="stock", description="Цена акции: /stock AAPL"),
+        BotCommand(command="crypto", description="Цена крипты: /crypto BTC"),
+        BotCommand(command="analyze", description="AI-анализ (скоро)"),
+        BotCommand(command="help", description="Справка"),
+    ]
+    await bot.set_my_commands(user_commands)
+    if admin_id:
+        await bot.set_my_commands(
+            [
+                BotCommand(command="admin", description="Панель администратора"),
+                BotCommand(command="users", description="Список пользователей"),
+                BotCommand(
+                    command="broadcast", description="Рассылка: /broadcast текст"
+                ),
+                BotCommand(command="ban", description="Бан: /ban id"),
+                BotCommand(command="unban", description="Разбан: /unban id"),
+                BotCommand(command="cachestats", description="Статистика кэша"),
+            ],
+            scope=BotCommandScopeChat(chat_id=admin_id),
+        )
+
+
 async def main() -> None:
     """Собирает приложение и запускает поллинг."""
     settings = get_settings()
@@ -81,6 +109,7 @@ async def main() -> None:
     dp.include_router(crypto_router)
 
     await create_tables()
+    await _setup_bot_commands(bot, settings.admin_id)
 
     log.info("Бот запущен (polling)")
     try:

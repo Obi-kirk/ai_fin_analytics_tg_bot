@@ -38,6 +38,9 @@ def make_session(status: int = 200, body: str = "") -> SimpleNamespace:
     """Создаёт фейковую aiohttp-сессию, возвращающую заданный ответ."""
 
     class FakeResponse:
+        def __init__(self) -> None:
+            self.status = status
+
         async def __aenter__(self) -> Self:
             return self
 

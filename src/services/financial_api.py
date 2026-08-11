@@ -23,6 +23,11 @@ ALLOWED_API_DOMAINS = (
     "api.telegram.org",
 )
 
+
+class ApiRateLimitError(RuntimeError):
+    """Превышен лимит запросов бесплатного API (HTTP 429)."""
+
+
 # Поддерживаемые валюты ЦБ РФ (коды ISO)
 CBR_CURRENCIES = frozenset({"USD", "EUR", "GBP", "CNY", "JPY"})
 
@@ -164,6 +169,8 @@ class FinnhubClient:
         params = {"symbol": symbol, "token": self._api_key}
         _check_domain(url)
         async with session.get(url, params=params, headers=BASE_HEADERS) as resp:
+            if resp.status == 429:
+                raise ApiRateLimitError("Finnhub: превышен лимит запросов")
             resp.raise_for_status()
             payload: dict[str, Any] = await resp.json()
         if not payload.get("c"):
@@ -194,6 +201,8 @@ class CoinGeckoClient:
         if self._api_key:
             headers["x-cg-demo-api-key"] = self._api_key
         async with session.get(url, params=params, headers=headers) as resp:
+            if resp.status == 429:
+                raise ApiRateLimitError("CoinGecko: превышен лимит запросов")
             resp.raise_for_status()
             return await resp.json()
 

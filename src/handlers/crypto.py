@@ -9,7 +9,12 @@ from aiogram.types import Message
 
 from src.config.settings import get_settings
 from src.services.cache import TTLCache
-from src.services.financial_api import CoinGeckoClient, StockQuote, make_session
+from src.services.financial_api import (
+    ApiRateLimitError,
+    CoinGeckoClient,
+    StockQuote,
+    make_session,
+)
 
 log = logging.getLogger(__name__)
 router = Router()
@@ -49,6 +54,11 @@ async def cmd_crypto(message: Message, cache: TTLCache) -> None:
         quote: StockQuote = await cache.get_or_set(
             key, lambda: fetch_crypto(raw), settings.cache_ttl_stock_seconds
         )
+    except ApiRateLimitError:
+        await message.answer(
+            "⚠️ Превышен лимит запросов к API крипты. Попробуй через минуту."
+        )
+        return
     except Exception:  # noqa: BLE001 — граница внешнего API, ошибка уже залогирована
         await message.answer("😔 Не удалось получить цену. Попробуй позже.")
         return
