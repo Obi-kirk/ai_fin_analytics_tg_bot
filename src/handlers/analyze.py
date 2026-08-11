@@ -15,8 +15,8 @@ from aiogram.filters import Command
 from aiogram.types import CallbackQuery, Message
 
 from src.config.settings import get_settings
-from src.handlers.crypto import fetch_crypto
-from src.handlers.stock import fetch_stock
+from src.handlers.crypto import COIN_RE, fetch_crypto
+from src.handlers.stock import TICKER_RE, fetch_stock
 from src.services.llm_service import (
     LLMClient,
     markdown_to_html,
@@ -42,40 +42,90 @@ AI_DISCLAIMER = "\n\n— <i>Это не инвестиционная реком�
 SendText = Callable[[str], Awaitable[None]]
 
 
-async def _market_context(symbol: str) -> str:
-    """Собирает данные о активе из Finnhub/CoinGecko для промпта."""
-    kind = ANALYSE_TYPES.get(symbol.upper())
-    if kind == "crypto":
-        quote = await fetch_crypto(symbol.upper())
-        kind_name = "криптовалюта"
-    else:
-        quote = await fetch_stock(symbol.upper())
-        kind_name = "акция/индекс"
+async def _stock_context(symbol: str) -> str:
+    """Контекст акции/индекса из Finnhub для промпта."""
+    quote = await fetch_stock(symbol.upper())
     sign = "+" if quote.change_percent >= 0 else ""
     return (
-        f"Тип: {kind_name}\n"
+        "Тип: акция/индекс\n"
         f"Символ: {quote.symbol}\n"
         f"Цена: {quote.price:.4f}\n"
         f"Изменение за день: {sign}{quote.change_percent:.2f}%"
     )
 
 
+async def _crypto_context(symbol: str) -> str:
+    """Контекст криптовалюты из CoinGecko для промпта."""
+    quote = await fetch_crypto(symbol.upper())
+    sign = "+" if quote.change_percent >= 0 else ""
+    return (
+        "Тип: криптовалюта\n"
+        f"Символ: {quote.symbol}\n"
+        f"Цена: {quote.price:.4f}\n"
+        f"Изменение за день: {sign}{quote.change_percent:.2f}%"
+    )
+
+
+async def _market_context(symbol: str) -> str:
+    """Контекст актива по известному символу подменю AI-анализа."""
+    if ANALYSE_TYPES.get(symbol.upper()) == "crypto":
+        return await _crypto_context(symbol)
+    return await _stock_context(symbol)
+
+
+async def _detect_context(token: str) -> str | None:
+    """Распознаёт актив по токену; None — это не актив (текстовый запрос).
+
+    Для неизвестных тикеров пробуем акцию, затем монету; LookupError
+    означает «такого актива нет» и не считается ошибкой.
+    """
+    upper = token.upper()
+    if upper in ANALYSE_TYPES:
+        return await _market_context(upper)
+    if TICKER_RE.match(upper):
+        try:
+            return await _stock_context(upper)
+        except LookupError:
+            pass
+    if COIN_RE.match(upper):
+        try:
+            return await _crypto_context(upper)
+        except LookupError:
+            pass
+    return None
+
+
 @router.message(Command("analyze"))
 async def cmd_analyze(message: Message, bot: Bot) -> None:
-    """AI-анализ по произвольному запросу: /analyze что-то."""
+    """AI-анализ: /analyze BTC, /analyze BTC стоит ли покупать, /analyze вопрос."""
     raw = message.text.split(maxsplit=1)
     if len(raw) < 2:
         await message.answer(
             "🤖 Напиши запрос, например:\n"
-            "/analyze стоит ли покупать BTC\n"
+            "/analyze BTC — анализ монеты\n"
+            "/analyze стоит ли покупать BTC — вопрос про рынок\n"
             "или выбери актив в меню AI-анализ"
         )
         return
-    query = sanitize_user_text(raw[1])
+
+    parts = raw[1].strip().split(maxsplit=1)
+    first = parts[0]
+    rest = parts[1] if len(parts) > 1 else ""
+
+    context = None
+    try:
+        context = await _detect_context(first)
+    except Exception:  # noqa: BLE001 — внешний API, ошибка уже залогирована
+        await message.answer("😔 Не удалось получить данные о активе.")
+        return
+    if context is not None:
+        query = sanitize_user_text(rest) or f"Проанализируй актив {first.upper()}."
+    else:
+        query = sanitize_user_text(raw[1])
     if not query or not QUERY_RE.match(query):
         await message.answer("Некорректный запрос. Опиши вопрос проще.")
         return
-    await _run_analysis(bot, message.chat.id, message.answer, query, context=None)
+    await _run_analysis(bot, message.chat.id, message.answer, query, context)
 
 
 @router.callback_query(F.data.regexp(r"^analyse:[A-Z]+$"))
