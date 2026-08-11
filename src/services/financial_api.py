@@ -18,6 +18,7 @@ ALLOWED_API_DOMAINS = (
     "www.cbr.ru",
     "api-v4.fcsapi.com",
     "api.coingecko.com",
+    "finnhub.io",
     "api.openrouter.ai",
     "api.telegram.org",
 )
@@ -124,31 +125,95 @@ class FCSClient:
         async with session.get(url, params=params, headers=BASE_HEADERS) as resp:
             resp.raise_for_status()
             payload: dict[str, Any] = await resp.json()
-        response = payload.get("response") or payload
-        if not response or not response[0]:
-            raise LookupError(f"FCS API не вернул данных по {symbol}: {payload}")
-        quote = response[0]
-        return StockQuote(
-            symbol=symbol,
-            price=float(quote["c"]),
-            change_percent=float(quote.get("chp") or 0),
-        )
+        if not payload.get("status", False):
+            raise RuntimeError(f"FCS API: {payload.get('msg', 'неизвестная ошибка')}")
+        response = payload.get("response") or []
+        if not response or "active" not in response[0]:
+            raise LookupError(f"FCS API не вернул данных по {symbol}")
+        quote: dict[str, Any] = response[0]["active"]
+        try:
+            return StockQuote(
+                symbol=symbol,
+                price=float(quote["c"]),
+                change_percent=float(quote.get("chp") or 0),
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise LookupError(f"Некорректный ответ FCS API по {symbol}") from exc
 
 
-class CoinGeckoClient:
-    """Цена криптовалюты (бесплатно, без ключа). Резерв при недоступном FCS."""
+class FinnhubClient:
+    """Котировки акций через Finnhub (бесплатно: 60 запросов/мин)."""
 
-    BASE_URL = "https://api.coingecko.com/api/v3"
+    BASE_URL = "https://finnhub.io/api/v1"
 
-    async def get_price(self, coin_id: str, session: aiohttp.ClientSession) -> float:
-        """Цена в USD по id монеты (bitcoin, ethereum, solana)."""
-        url = f"{self.BASE_URL}/simple/price"
-        params = {"ids": coin_id, "vs_currencies": "usd"}
+    def __init__(self, api_key: str | None) -> None:
+        self._api_key = api_key
+
+    async def get_quote(
+        self, symbol: str, session: aiohttp.ClientSession
+    ) -> StockQuote:
+        """Текущая котировка акции/индекса по тикеру (AAPL, ^GSPC, SPY)."""
+        if not self._api_key:
+            raise RuntimeError(
+                f"Finnhub API ключ не настроен (FINNHUB_API_KEY) — нельзя запросить {symbol}"
+            )
+        url = f"{self.BASE_URL}/quote"
+        params = {"symbol": symbol, "token": self._api_key}
         _check_domain(url)
         async with session.get(url, params=params, headers=BASE_HEADERS) as resp:
             resp.raise_for_status()
             payload: dict[str, Any] = await resp.json()
+        if not payload.get("c"):
+            raise LookupError(f"Finnhub не знает тикер {symbol} (или превышен лимит)")
+        return StockQuote(
+            symbol=symbol,
+            price=float(payload["c"]),
+            change_percent=float(payload.get("dp") or 0),
+        )
+
+
+class CoinGeckoClient:
+    """Цены криптовалют CoinGecko. Демо-ключ: 100 req/мин, 10k/мес.
+
+    Работает и без ключа (keyless), но лимит значительно ниже и нестабилен.
+    """
+
+    BASE_URL = "https://api.coingecko.com/api/v3"
+
+    def __init__(self, api_key: str | None = None) -> None:
+        self._api_key = api_key
+
+    async def _get(
+        self, url: str, params: dict[str, str], session: aiohttp.ClientSession
+    ) -> dict[str, Any]:
+        _check_domain(url)
+        headers: dict[str, str] = dict(BASE_HEADERS)
+        if self._api_key:
+            headers["x-cg-demo-api-key"] = self._api_key
+        async with session.get(url, params=params, headers=headers) as resp:
+            resp.raise_for_status()
+            return await resp.json()
+
+    async def get_quote(
+        self, coin_id: str, session: aiohttp.ClientSession
+    ) -> StockQuote:
+        """Текущая цена и изменение за 24 часа (в %) в USD."""
+        url = f"{self.BASE_URL}/simple/price"
+        payload = await self._get(
+            url,
+            {
+                "ids": coin_id,
+                "vs_currencies": "usd",
+                "include_24hr_change": "true",
+            },
+            session,
+        )
         try:
-            return float(payload[coin_id]["usd"])
-        except (KeyError, TypeError) as exc:
+            data = payload[coin_id]
+            return StockQuote(
+                symbol=coin_id,
+                price=float(data["usd"]),
+                change_percent=float(data.get("usd_24h_change") or 0),
+            )
+        except (KeyError, TypeError, ValueError) as exc:
             raise LookupError(f"CoinGecko не знает монету {coin_id}") from exc

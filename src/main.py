@@ -15,8 +15,10 @@ from aiogram.fsm.storage.memory import MemoryStorage
 
 from src.config.settings import get_settings
 from src.database.db import close_db, create_tables
+from src.handlers.crypto import router as crypto_router
 from src.handlers.rate import router as rate_router
 from src.handlers.start import router as start_router
+from src.handlers.stock import router as stock_router
 from src.services.cache import TTLCache
 
 log = logging.getLogger(__name__)
@@ -58,6 +60,8 @@ async def main() -> None:
 
     dp.include_router(start_router)
     dp.include_router(rate_router)
+    dp.include_router(stock_router)
+    dp.include_router(crypto_router)
 
     await create_tables()
 
