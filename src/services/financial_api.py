@@ -23,14 +23,8 @@ ALLOWED_API_DOMAINS = (
     "api.telegram.org",
 )
 
-# Коды валют ЦБ РФ -> ISO (используется в команде /rate)
-CBR_CURRENCIES = {
-    "USD": "R01235",
-    "EUR": "R01239",
-    "GBP": "R01035",
-    "CNY": "R01375",
-    "JPY": "R01820",
-}
+# Поддерживаемые валюты ЦБ РФ (коды ISO)
+CBR_CURRENCIES = frozenset({"USD", "EUR", "GBP", "CNY", "JPY"})
 
 BASE_HEADERS = {"User-Agent": "ai-parser-bot/0.1 (finance telegram bot)"}
 
@@ -77,7 +71,7 @@ class CBRClient:
             xml = await resp.text(encoding="windows-1251")
         root = ET.fromstring(xml)
         for valute in root.findall("./Valute"):
-            if valute.findtext("ID") != CBR_CURRENCIES[iso]:
+            if (valute.findtext("CharCode") or "").strip() != iso:
                 continue
             value_text = (valute.findtext("Value") or "0").replace(",", ".")
             nominal = int(valute.findtext("Nominal") or "1")
