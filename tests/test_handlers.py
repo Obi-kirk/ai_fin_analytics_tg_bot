@@ -86,3 +86,29 @@ async def test_fetch_crypto_uses_alias(monkeypatch) -> None:
     monkeypatch.setattr(module, "CoinGeckoClient", FakeGecko)
     quote = await fetch_crypto("SOL")
     assert quote.price == pytest.approx(76.25)
+
+
+class TestDisclaimer:
+    def test_start_disclaimer_has_key_phrases(self) -> None:
+        from src.handlers.start import DISCLAIMER_TEXT
+
+        assert "не является финансовой консультацией" in DISCLAIMER_TEXT
+        assert "ЦБ РФ" in DISCLAIMER_TEXT
+        assert "Ответственность" in DISCLAIMER_TEXT
+
+    def test_start_disclaimer_is_html_safe(self) -> None:
+        from src.handlers.start import DISCLAIMER_TEXT
+
+        assert "**" not in DISCLAIMER_TEXT
+        assert "<b>" in DISCLAIMER_TEXT
+
+    def test_ai_disclaimer_appended(self) -> None:
+        from src.handlers.analyze import AI_DISCLAIMER
+
+        assert "не инвестиционная рекомендация" in AI_DISCLAIMER
+        assert AI_DISCLAIMER.startswith("\n\n")
+
+    def test_help_mentions_disclaimer(self) -> None:
+        from src.handlers.help import HELP_TEXT
+
+        assert "не является инвестиционной рекомендацией" in HELP_TEXT

@@ -16,6 +16,7 @@ from aiogram.types import BotCommand, BotCommandScopeChat
 from src.config.settings import get_settings
 from src.database.db import close_db, create_tables
 from src.handlers.admin import router as admin_router
+from src.handlers.analyze import router as analyze_router
 from src.handlers.crypto import router as crypto_router
 from src.handlers.errors import router as errors_router
 from src.handlers.help import router as help_router
@@ -107,6 +108,7 @@ async def main() -> None:
     dp.include_router(rate_router)
     dp.include_router(stock_router)
     dp.include_router(crypto_router)
+    dp.include_router(analyze_router)
 
     await create_tables()
     await _setup_bot_commands(bot, settings.admin_id)

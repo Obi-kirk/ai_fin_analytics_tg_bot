@@ -19,7 +19,7 @@ ALLOWED_API_DOMAINS = (
     "api-v4.fcsapi.com",
     "api.coingecko.com",
     "finnhub.io",
-    "api.openrouter.ai",
+    "openrouter.ai",  # и api.openrouter.ai
     "api.telegram.org",
 )
 

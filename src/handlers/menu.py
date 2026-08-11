@@ -231,16 +231,6 @@ async def on_crypto(callback: CallbackQuery, cache: TTLCache) -> None:
     )
 
 
-@router.callback_query(F.data == "analyse:AAPL")
-async def on_analyse(callback: CallbackQuery) -> None:
-    """Заглушка AI-анализа — агент появится на следующем этапе."""
-    await callback.answer()
-    await callback.message.answer(
-        "🤖 AI-анализ ещё в разработке. Совсем скоро!",
-        reply_markup=refresh_kb("analyse:soon"),
-    )
-
-
 @router.callback_query(F.data.regexp(r"^submenu:(fx|stock|crypto|analyse)$"))
 async def on_submenu(callback: CallbackQuery) -> None:
     """Возвращает сообщение к подменю выбора (кнопка «↩️ Меню»)."""

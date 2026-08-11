@@ -35,6 +35,10 @@ class Settings(BaseSettings):
     cache_ttl_fx_seconds: int = 3600  # валюты: 1 час
     cache_ttl_stock_seconds: int = 600  # акции/крипта: 10 минут
 
+    # AI-агент
+    openrouter_model: str = "nvidia/nemotron-3-nano-30b-a3b:free"
+    openrouter_max_tokens: int = 700
+
 
 @lru_cache
 def get_settings() -> Settings:
