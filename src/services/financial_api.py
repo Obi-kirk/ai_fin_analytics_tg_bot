@@ -7,6 +7,7 @@
 import logging
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import aiohttp
@@ -181,6 +182,49 @@ class FinnhubClient:
             change_percent=float(payload.get("dp") or 0),
         )
 
+    async def get_company_profile(
+        self, symbol: str, session: aiohttp.ClientSession
+    ) -> dict[str, Any]:
+        """Справка о компании: название, сектор, описание (может быть пустой)."""
+        if not self._api_key:
+            raise RuntimeError(
+                f"Finnhub API ключ не настроен (FINNHUB_API_KEY) — нельзя запросить профиль {symbol}"
+            )
+        url = f"{self.BASE_URL}/stock/profile2"
+        params = {"symbol": symbol, "token": self._api_key}
+        _check_domain(url)
+        async with session.get(url, params=params, headers=BASE_HEADERS) as resp:
+            if resp.status == 429:
+                raise ApiRateLimitError("Finnhub: превышен лимит запросов")
+            resp.raise_for_status()
+            payload: dict[str, Any] = await resp.json()
+        return payload or {}
+
+    async def get_news(
+        self, symbol: str, session: aiohttp.ClientSession, days: int = 10
+    ) -> list[dict[str, Any]]:
+        """Свежие новости по тикеру (free-тариф отдаёт заголовки)."""
+        if not self._api_key:
+            raise RuntimeError(
+                f"Finnhub API ключ не настроен (FINNHUB_API_KEY) — нельзя запросить новости {symbol}"
+            )
+        today = datetime.now(timezone.utc).date()
+        since = today - timedelta(days=days)
+        url = f"{self.BASE_URL}/company-news"
+        params = {
+            "symbol": symbol,
+            "from": since.isoformat(),
+            "to": today.isoformat(),
+            "token": self._api_key,
+        }
+        _check_domain(url)
+        async with session.get(url, params=params, headers=BASE_HEADERS) as resp:
+            if resp.status == 429:
+                raise ApiRateLimitError("Finnhub: превышен лимит запросов")
+            resp.raise_for_status()
+            payload: list[dict[str, Any]] = await resp.json()
+        return [n for n in payload if n.get("headline")][:10]
+
 
 class CoinGeckoClient:
     """Цены криптовалют CoinGecko. Демо-ключ: 100 req/мин, 10k/мес.
@@ -229,3 +273,48 @@ class CoinGeckoClient:
             )
         except (KeyError, TypeError, ValueError) as exc:
             raise LookupError(f"CoinGecko не знает монету {coin_id}") from exc
+
+    async def get_market_data(
+        self, coin_id: str, session: aiohttp.ClientSession
+    ) -> dict[str, Any]:
+        """Фундаментальные данные монеты: капитализация, объём, ранг, ATH."""
+        url = f"{self.BASE_URL}/coins/{coin_id}"
+        payload = await self._get(
+            url,
+            {
+                "localization": "false",
+                "tickers": "false",
+                "market_data": "true",
+                "community_data": "false",
+                "developer_data": "false",
+            },
+            session,
+        )
+        if "market_data" not in payload:
+            raise LookupError(f"CoinGecko не знает монету {coin_id}")
+        md = payload.get("market_data", {}) or {}
+        return {
+            "name": payload.get("name"),
+            "rank": payload.get("market_cap_rank"),
+            "market_cap": (md.get("market_cap") or {}).get("usd"),
+            "volume": (md.get("total_volume") or {}).get("usd"),
+            "ath": (md.get("ath") or {}).get("usd"),
+            "ath_date": (md.get("ath_date") or {}).get("usd"),
+            "description": (payload.get("description") or {}).get("en", ""),
+        }
+
+    async def get_price_history(
+        self, coin_id: str, session: aiohttp.ClientSession, days: int = 30
+    ) -> list[float]:
+        """История цен (US-доллары) за N дней: только значения."""
+        url = f"{self.BASE_URL}/coins/{coin_id}/market_chart"
+        payload = await self._get(
+            url, {"vs_currency": "usd", "days": str(days)}, session
+        )
+        prices = payload.get("prices") or []
+        try:
+            return [float(p[1]) for p in prices]
+        except (TypeError, ValueError) as exc:
+            raise LookupError(
+                f"CoinGecko вернул некорректную историю для {coin_id}"
+            ) from exc

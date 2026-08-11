@@ -17,6 +17,12 @@ from aiogram.types import CallbackQuery, Message
 from src.config.settings import get_settings
 from src.handlers.crypto import COIN_RE, fetch_crypto
 from src.handlers.stock import TICKER_RE, fetch_stock
+from src.services.cache import TTLCache
+from src.services.financial_api import (
+    CoinGeckoClient,
+    FinnhubClient,
+    make_session,
+)
 from src.services.llm_service import (
     LLMClient,
     markdown_to_html,
@@ -41,39 +47,184 @@ AI_DISCLAIMER = "\n\n— <i>Это не инвестиционная реком�
 
 SendText = Callable[[str], Awaitable[None]]
 
+# Ограничения для контекста: чтобы не раздувать промпт (AGENTS.md: экономия токенов)
+MAX_DESCRIPTION_LENGTH = 300
+MAX_NEWS_ITEMS = 3
+MAX_NEWS_LENGTH = 120
 
-async def _stock_context(symbol: str) -> str:
-    """Контекст акции/индекса из Finnhub для промпта."""
-    quote = await fetch_stock(symbol.upper())
+
+async def _fetch_company_profile(symbol: str) -> dict:
+    """Справка о компании Finnhub (кэшируется отдельно от котировки)."""
+    async with make_session() as session:
+        client = FinnhubClient(get_settings().finnhub_api_key)
+        return await client.get_company_profile(symbol, session)
+
+
+async def _fetch_news(symbol: str) -> list[dict]:
+    """Свежие новости по тикеру Finnhub."""
+    async with make_session() as session:
+        client = FinnhubClient(get_settings().finnhub_api_key)
+        return await client.get_news(symbol, session)
+
+
+async def _fetch_market_data(coin_id: str) -> dict:
+    """Фундаментальные данные монеты CoinGecko."""
+    async with make_session() as session:
+        client = CoinGeckoClient(get_settings().coingecko_api_key)
+        return await client.get_market_data(coin_id, session)
+
+
+async def _fetch_price_history(coin_id: str) -> list[float]:
+    """История цен монеты за 30 дней (для тренда 7д/30д)."""
+    async with make_session() as session:
+        client = CoinGeckoClient(get_settings().coingecko_api_key)
+        return await client.get_price_history(coin_id, session)
+
+
+def _trend_change(prices: list[float], days: int) -> float | None:
+    """Изменение цены (%) от первой цены N дней назад до последней."""
+    if len(prices) < 2:
+        return None
+    step = max(1, len(prices) // days)
+    first = prices[-1 - step]
+    last = prices[-1]
+    if not first:
+        return None
+    return (last / first - 1) * 100
+
+
+def _format_money(value: float | None) -> str:
+    """Форматирует крупные суммы: 1.29T, 21.3B, 900M, 126.1K."""
+    if not value:
+        return "—"
+    if value >= 1e12:
+        return f"${value / 1e12:.2f}T"
+    if value >= 1e9:
+        return f"${value / 1e9:.2f}B"
+    if value >= 1e6:
+        return f"${value / 1e6:.1f}M"
+    if value >= 1e3:
+        return f"${value / 1e3:.1f}K"
+    return f"${value:,.0f}"
+
+
+def _clean_text(text: str, limit: int) -> str:
+    """Убирает лишние пробелы/переносы и обрезает текст."""
+    cleaned = re.sub(r"\s+", " ", text or "").strip()
+    return cleaned[:limit]
+
+
+async def _stock_context(symbol: str, cache: TTLCache) -> str:
+    """Контекст акции: котировка + профиль компании + свежие новости.
+
+    Дополнительные данные не роняют анализ: при сбое остаётся котировка.
+    """
+    settings = get_settings()
+    quote = await fetch_stock(symbol)
     sign = "+" if quote.change_percent >= 0 else ""
-    return (
-        "Тип: акция/индекс\n"
-        f"Символ: {quote.symbol}\n"
-        f"Цена: {quote.price:.4f}\n"
-        f"Изменение за день: {sign}{quote.change_percent:.2f}%"
-    )
+    lines = [
+        "Тип: акция/индекс",
+        f"Символ: {quote.symbol}",
+        f"Цена: {quote.price:.4f}",
+        f"Изменение за день: {sign}{quote.change_percent:.2f}%",
+    ]
+
+    profile: dict = {}
+    news: list[dict] = []
+    try:
+        profile = await cache.get_or_set(
+            f"stock:profile:{symbol}",
+            lambda: _fetch_company_profile(symbol),
+            settings.cache_ttl_fundamental_seconds,
+        )
+        news = await cache.get_or_set(
+            f"stock:news:{symbol}",
+            lambda: _fetch_news(symbol),
+            settings.cache_ttl_fundamental_seconds,
+        )
+    except Exception:  # noqa: BLE001 — доп. данные не критичны
+        log.warning("Не удалось получить профиль/новости для %s", symbol)
+
+    if profile.get("name") or profile.get("finnhubIndustry"):
+        lines.append(
+            f"Компания: {profile.get('name') or '—'} "
+            f"({profile.get('finnhubIndustry') or '—'})"
+        )
+    if profile.get("description"):
+        lines.append(
+            "Описание: " + _clean_text(profile["description"], MAX_DESCRIPTION_LENGTH)
+        )
+    headlines = [_clean_text(n.get("headline", ""), MAX_NEWS_LENGTH) for n in news]
+    headlines = [h for h in headlines if h][:MAX_NEWS_ITEMS]
+    if headlines:
+        lines.append("Последние новости:")
+        lines.extend(f"- {h}" for h in headlines)
+    return "\n".join(lines)
 
 
-async def _crypto_context(symbol: str) -> str:
-    """Контекст криптовалюты из CoinGecko для промпта."""
-    quote = await fetch_crypto(symbol.upper())
+async def _crypto_context(symbol: str, cache: TTLCache) -> str:
+    """Контекст криптовалюты: котировка + капитализация + тренд 7д/30д."""
+    settings = get_settings()
+    quote = await fetch_crypto(symbol)
     sign = "+" if quote.change_percent >= 0 else ""
-    return (
-        "Тип: криптовалюта\n"
-        f"Символ: {quote.symbol}\n"
-        f"Цена: {quote.price:.4f}\n"
-        f"Изменение за день: {sign}{quote.change_percent:.2f}%"
-    )
+    lines = [
+        "Тип: криптовалюта",
+        f"Символ: {quote.symbol}",
+        f"Цена: {quote.price:.4f}",
+        f"Изменение за 24ч: {sign}{quote.change_percent:.2f}%",
+    ]
+
+    market: dict = {}
+    history: list[float] = []
+    try:
+        coin_id = _gecko_id(symbol)
+        market = await cache.get_or_set(
+            f"crypto:market:{symbol}",
+            lambda: _fetch_market_data(coin_id),
+            settings.cache_ttl_fundamental_seconds,
+        )
+        history = await cache.get_or_set(
+            f"crypto:chart:{symbol}",
+            lambda: _fetch_price_history(coin_id),
+            settings.cache_ttl_fundamental_seconds,
+        )
+    except Exception:  # noqa: BLE001 — доп. данные не критичны
+        log.warning("Не удалось получить рыночные данные для %s", symbol)
+
+    if market.get("name") or market.get("rank"):
+        lines.append(
+            f"Монета: {market.get('name') or '—'} (rank #{market.get('rank') or '—'})"
+        )
+    cap = _format_money(market.get("market_cap"))
+    volume = _format_money(market.get("volume"))
+    ath = _format_money(market.get("ath"))
+    lines.append(f"Капитализация: {cap}, объём за 24ч: {volume}, ATH: {ath}")
+    change_7d = _trend_change(history, 7)
+    change_30d = _trend_change(history, 30)
+    if change_7d is not None:
+        lines.append(f"Тренд: 7д {change_7d:+.2f}%, 30д {change_30d:+.2f}%")
+    if market.get("description"):
+        lines.append(
+            "Описание: " + _clean_text(market["description"], MAX_DESCRIPTION_LENGTH)
+        )
+    return "\n".join(lines)
 
 
-async def _market_context(symbol: str) -> str:
+def _gecko_id(symbol: str) -> str:
+    """id монеты в CoinGecko по символу (согласовано с COINS в crypto.py)."""
+    from src.handlers.crypto import COINS
+
+    return COINS.get(symbol.upper(), symbol.lower())
+
+
+async def _market_context(symbol: str, cache: TTLCache) -> str:
     """Контекст актива по известному символу подменю AI-анализа."""
     if ANALYSE_TYPES.get(symbol.upper()) == "crypto":
-        return await _crypto_context(symbol)
-    return await _stock_context(symbol)
+        return await _crypto_context(symbol, cache)
+    return await _stock_context(symbol, cache)
 
 
-async def _detect_context(token: str) -> str | None:
+async def _detect_context(token: str, cache: TTLCache) -> str | None:
     """Распознаёт актив по токену; None — это не актив (текстовый запрос).
 
     Для неизвестных тикеров пробуем акцию, затем монету; LookupError
@@ -81,22 +232,22 @@ async def _detect_context(token: str) -> str | None:
     """
     upper = token.upper()
     if upper in ANALYSE_TYPES:
-        return await _market_context(upper)
+        return await _market_context(upper, cache)
     if TICKER_RE.match(upper):
         try:
-            return await _stock_context(upper)
+            return await _stock_context(upper, cache)
         except LookupError:
             pass
     if COIN_RE.match(upper):
         try:
-            return await _crypto_context(upper)
+            return await _crypto_context(upper, cache)
         except LookupError:
             pass
     return None
 
 
 @router.message(Command("analyze"))
-async def cmd_analyze(message: Message, bot: Bot) -> None:
+async def cmd_analyze(message: Message, bot: Bot, cache: TTLCache) -> None:
     """AI-анализ: /analyze BTC, /analyze BTC стоит ли покупать, /analyze вопрос."""
     raw = message.text.split(maxsplit=1)
     if len(raw) < 2:
@@ -114,7 +265,7 @@ async def cmd_analyze(message: Message, bot: Bot) -> None:
 
     context = None
     try:
-        context = await _detect_context(first)
+        context = await _detect_context(first, cache)
     except Exception:  # noqa: BLE001 — внешний API, ошибка уже залогирована
         await message.answer("😔 Не удалось получить данные о активе.")
         return
@@ -129,7 +280,7 @@ async def cmd_analyze(message: Message, bot: Bot) -> None:
 
 
 @router.callback_query(F.data.regexp(r"^analyse:[A-Z]+$"))
-async def on_analyse(callback: CallbackQuery, bot: Bot) -> None:
+async def on_analyse(callback: CallbackQuery, bot: Bot, cache: TTLCache) -> None:
     """Анализ тикера из подменю AI-анализа."""
     symbol = callback.data.split(":", 1)[1]
     if symbol not in ANALYSE_TYPES:
@@ -137,7 +288,7 @@ async def on_analyse(callback: CallbackQuery, bot: Bot) -> None:
         return
     await callback.answer()
     try:
-        context = await _market_context(symbol)
+        context = await _market_context(symbol, cache)
     except Exception:  # noqa: BLE001 — внешний API, ошибка уже залогирована
         await callback.message.answer("😔 Не удалось получить данные о активе.")
         return

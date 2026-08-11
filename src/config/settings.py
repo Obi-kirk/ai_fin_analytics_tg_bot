@@ -34,10 +34,11 @@ class Settings(BaseSettings):
     rate_limit_per_minute: int = 10
     cache_ttl_fx_seconds: int = 3600  # валюты: 1 час
     cache_ttl_stock_seconds: int = 600  # акции/крипта: 10 минут
+    cache_ttl_fundamental_seconds: int = 1800  # профиль/новости: 30 минут
 
     # AI-агент
     openrouter_model: str = "nvidia/nemotron-3-nano-30b-a3b:free"
-    openrouter_max_tokens: int = 700
+    openrouter_max_tokens: int = 1200
 
 
 @lru_cache

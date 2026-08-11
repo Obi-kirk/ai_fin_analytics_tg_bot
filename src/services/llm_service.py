@@ -144,7 +144,12 @@ class LLMClient:
                 raise RuntimeError(f"OpenRouter ответил {resp.status}")
             data = await resp.json()
         try:
-            return data["choices"][0]["message"]["content"].strip()
+            choice = data["choices"][0]
+            if choice.get("finish_reason") == "length":
+                log.warning(
+                    "Ответ модели обрезан по лимиту max_tokens (%s)", self._max_tokens
+                )
+            return choice["message"]["content"].strip()
         except (KeyError, IndexError, TypeError):
             log.error("Некорректный ответ OpenRouter: %.200s", str(data)[:200])
             raise RuntimeError("OpenRouter вернул некорректный ответ")
