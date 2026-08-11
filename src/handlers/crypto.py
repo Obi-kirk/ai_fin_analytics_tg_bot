@@ -117,6 +117,64 @@ async def cmd_trending(message: Message, cache: TTLCache) -> None:
     await message.answer(format_trending(coins))
 
 
+def _format_cap(value: float | None) -> str:
+    """Компактное представление капитализации: $1.29T, $320B, $45M."""
+    if not value:
+        return "—"
+    for suffix, divisor in (("T", 1e12), ("B", 1e9), ("M", 1e6), ("K", 1e3)):
+        if value >= divisor:
+            return f"${value / divisor:,.2f}{suffix}"
+    return f"${value:,.0f}"
+
+
+async def fetch_top() -> list[dict]:
+    """Топ монет по капитализации (кэшируется на 10 минут)."""
+    async with make_session() as session:
+        gecko = CoinGeckoClient(get_settings().coingecko_api_key)
+        try:
+            return await gecko.get_top_market_cap(session)
+        except Exception:
+            log.exception("Не удалось получить топ капитализации от CoinGecko")
+            raise
+
+
+def format_top(coins: list[dict]) -> str:
+    """Форматирует топ монет по капитализации для Telegram (HTML)."""
+    lines = ["🏆 <b>Топ криптовалют по капитализации</b>\n"]
+    for i, coin in enumerate(coins[:10], start=1):
+        change = coin.get("change_percent")
+        sign = "+" if change is not None and change >= 0 else ""
+        change_str = (
+            f" — {sign}{change:.2f}%" if isinstance(change, (int, float)) else ""
+        )
+        lines.append(
+            f"{i}. {coin['name']} <b>({coin['symbol']})</b>"
+            f"\n   💵 ${coin['price']:,.2f}{change_str}"
+            f"\n   💰 Капитализация: {_format_cap(coin['market_cap'])}"
+        )
+    lines.append("\nПодробнее: /crypto SYMBOL или AI-анализ в меню.")
+    return "\n".join(lines)
+
+
+@router.message(Command("top"))
+async def cmd_top(message: Message, cache: TTLCache) -> None:
+    """Показывает топ монет по капитализации."""
+    settings = get_settings()
+    try:
+        coins = await cache.get_or_set(
+            "top", fetch_top, settings.cache_ttl_stock_seconds
+        )
+    except ApiRateLimitError:
+        await message.answer(
+            "⚠️ Превышен лимит запросов к API крипты. Попробуй через минуту."
+        )
+        return
+    except Exception:  # noqa: BLE001 — граница внешнего API, ошибка уже залогирована
+        await message.answer("😔 Не удалось получить топ. Попробуй позже.")
+        return
+    await message.answer(format_top(coins))
+
+
 def format_crypto(symbol: str, quote: StockQuote) -> str:
     """Форматирует цену криптовалюты для Telegram (HTML)."""
     sign = "+" if quote.change_percent >= 0 else ""

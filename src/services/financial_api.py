@@ -337,3 +337,36 @@ class CoinGeckoClient:
                 }
             )
         return coins
+
+    async def get_top_market_cap(
+        self, session: aiohttp.ClientSession, limit: int = 10
+    ) -> list[dict[str, Any]]:
+        """Топ монет по капитализации (порядок: market_cap_desc)."""
+        url = f"{self.BASE_URL}/coins/markets"
+        payload = await self._get(
+            url,
+            {
+                "vs_currency": "usd",
+                "order": "market_cap_desc",
+                "per_page": str(limit),
+                "page": "1",
+                "sparkline": "false",
+                "price_change_percentage": "24h",
+            },
+            session,
+        )
+        if not isinstance(payload, list):
+            raise TypeError("CoinGecko вернул некорректный топ капитализации")
+        coins = []
+        for item in payload:
+            coins.append(
+                {
+                    "symbol": (item.get("symbol") or "").upper(),
+                    "name": item.get("name"),
+                    "rank": item.get("market_cap_rank"),
+                    "price": item.get("current_price"),
+                    "market_cap": item.get("market_cap"),
+                    "change_percent": item.get("price_change_percentage_24h"),
+                }
+            )
+        return coins

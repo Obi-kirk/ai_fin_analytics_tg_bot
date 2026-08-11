@@ -16,7 +16,7 @@ from sqlalchemy import func, select, update
 
 from src.config.settings import get_settings
 from src.database.db import get_session
-from src.database.models import User
+from src.database.models import QueryLog, User
 from src.middleware.users import BotStats
 from src.services.cache import TTLCache
 
@@ -103,6 +103,34 @@ async def cmd_cachestats(message: Message, cache: TTLCache) -> None:
 async def cmd_users(message: Message) -> None:
     """Список пользователей, первая страница."""
     await _show_users_page(message, page=1)
+
+
+@router.message(Command("recent"), F.from_user.func(is_admin_command))
+async def cmd_recent(message: Message) -> None:
+    """Последние запросы пользователей (история query_log)."""
+    async for session in get_session():
+        entries = (
+            (
+                await session.execute(
+                    select(QueryLog).order_by(QueryLog.id.desc()).limit(10)
+                )
+            )
+            .scalars()
+            .all()
+        )
+    if not entries:
+        await message.answer("История запросов пока пуста.")
+        return
+    lines = ["🕐 <b>Последние запросы</b>\n"]
+    for entry in entries:
+        time = entry.created_at.strftime("%d.%m %H:%M") if entry.created_at else "—"
+        kind = "🔘" if entry.event_type == "callback" else "💬"
+        text = entry.payload or entry.command or "—"
+        lines.append(
+            f"• {time} {kind} <code>{entry.telegram_id}</code> "
+            f"<b>{entry.command or ''}</b> {text[:120]}"
+        )
+    await message.answer("\n".join(lines))
 
 
 @router.callback_query(UsersPageCD.filter())

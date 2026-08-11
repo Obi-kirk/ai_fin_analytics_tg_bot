@@ -24,6 +24,7 @@ from src.handlers.menu import router as menu_router
 from src.handlers.rate import router as rate_router
 from src.handlers.start import router as start_router
 from src.handlers.stock import router as stock_router
+from src.middleware.query_log import QueryLogMiddleware
 from src.middleware.throttling import ThrottlingMiddleware
 from src.middleware.users import BotStats, UsersMiddleware
 from src.services.cache import TTLCache
@@ -62,6 +63,7 @@ async def _setup_bot_commands(bot: Bot, admin_id: int | None) -> None:
         BotCommand(command="stock", description="Цена акции: /stock AAPL"),
         BotCommand(command="crypto", description="Цена крипты: /crypto BTC"),
         BotCommand(command="trending", description="Топ трендовых монет"),
+        BotCommand(command="top", description="Топ по капитализации"),
         BotCommand(command="news", description="Новости по тикеру: /news AAPL"),
         BotCommand(command="analyze", description="AI-анализ: /analyze BTC"),
         BotCommand(command="help", description="Справка"),
@@ -78,6 +80,7 @@ async def _setup_bot_commands(bot: Bot, admin_id: int | None) -> None:
                 BotCommand(command="ban", description="Бан: /ban id"),
                 BotCommand(command="unban", description="Разбан: /unban id"),
                 BotCommand(command="cachestats", description="Статистика кэша"),
+                BotCommand(command="recent", description="Последние запросы"),
             ],
             scope=BotCommandScopeChat(chat_id=admin_id),
         )
@@ -105,6 +108,8 @@ async def main() -> None:
     stats = BotStats()
     dp.message.outer_middleware(UsersMiddleware(stats))
     dp.callback_query.outer_middleware(UsersMiddleware(stats))
+    dp.message.outer_middleware(QueryLogMiddleware())
+    dp.callback_query.outer_middleware(QueryLogMiddleware())
 
     dp.include_router(errors_router)
     dp.include_router(admin_router)

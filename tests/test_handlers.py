@@ -2,7 +2,13 @@
 
 import pytest
 
-from src.handlers.crypto import COIN_RE, fetch_crypto, format_crypto, format_trending
+from src.handlers.crypto import (
+    COIN_RE,
+    fetch_crypto,
+    format_crypto,
+    format_top,
+    format_trending,
+)
 from src.handlers.rate import format_fx
 from src.handlers.stock import (
     INDEX_ALIASES,
@@ -113,6 +119,68 @@ class TestTrending:
         text = format_trending(coins)
         assert "Coin1" in text
         assert "Coin14" not in text  # показываем только топ-10
+
+
+class TestTop:
+    def test_format_top(self) -> None:
+        coins = [
+            {
+                "symbol": "BTC",
+                "name": "Bitcoin",
+                "rank": 1,
+                "price": 104000.5,
+                "market_cap": 2_050_000_000_000,
+                "change_percent": 2.5,
+            },
+            {
+                "symbol": "ETH",
+                "name": "Ethereum",
+                "rank": 2,
+                "price": 3500.0,
+                "market_cap": 420_000_000_000,
+                "change_percent": -1.2,
+            },
+        ]
+        text = format_top(coins)
+        assert "Топ криптовалют по капитализации" in text
+        assert "Bitcoin <b>(BTC)</b>" in text
+        assert "$104,000.50" in text
+        assert "+2.50%" in text
+        assert "-1.20%" in text
+        assert "$2.05T" in text
+        assert "$420.00B" in text
+
+    def test_format_top_limit_10(self) -> None:
+        coins = [
+            {
+                "symbol": f"C{i}",
+                "name": f"Coin{i}",
+                "rank": i,
+                "price": 1.0,
+                "market_cap": 1e9,
+                "change_percent": None,
+            }
+            for i in range(1, 15)
+        ]
+        text = format_top(coins)
+        assert "Coin1" in text
+        assert "Coin14" not in text
+
+    def test_format_top_no_change(self) -> None:
+        coins = [
+            {
+                "symbol": "BTC",
+                "name": "Bitcoin",
+                "rank": 1,
+                "price": 100.0,
+                "market_cap": None,
+                "change_percent": None,
+            }
+        ]
+        text = format_top(coins)
+        assert "Bitcoin" in text
+        assert "%" not in text.split("Капитализация:")[0].rsplit("\n", 1)[1]
+        assert "Капитализация: —" in text
 
 
 class TestNews:
