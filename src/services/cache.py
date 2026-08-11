@@ -21,6 +21,8 @@ class TTLCache:
         self._gc_interval = gc_interval_seconds
         self._gc_task: asyncio.Task[None] | None = None
         self._started = False
+        self.hits = 0
+        self.misses = 0
 
     def start_gc(self) -> None:
         """Запускает фоновую очистку просроченных записей (для polling-цикла)."""
@@ -42,12 +44,24 @@ class TTLCache:
         async with self._lock:
             item = self._data.get(key)
             if item is None:
+                self.misses += 1
                 return None
             expires_at, value = item
             if time.monotonic() > expires_at:
                 self._data.pop(key, None)
+                self.misses += 1
                 return None
+            self.hits += 1
             return value
+
+    async def stats(self) -> dict[str, int]:
+        """Статистика кэша: записи, попадания, промахи."""
+        async with self._lock:
+            return {
+                "entries": len(self._data),
+                "hits": self.hits,
+                "misses": self.misses,
+            }
 
     async def set(self, key: str, value: Any, ttl_seconds: int) -> None:
         """Сохраняет значение с временем жизни в секундах."""

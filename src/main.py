@@ -14,6 +14,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 
 from src.config.settings import get_settings
 from src.database.db import close_db, create_tables
+from src.handlers.admin import router as admin_router
 from src.handlers.crypto import router as crypto_router
 from src.handlers.errors import router as errors_router
 from src.handlers.help import router as help_router
@@ -22,6 +23,7 @@ from src.handlers.rate import router as rate_router
 from src.handlers.start import router as start_router
 from src.handlers.stock import router as stock_router
 from src.middleware.throttling import ThrottlingMiddleware
+from src.middleware.users import BotStats, UsersMiddleware
 from src.services.cache import TTLCache
 
 log = logging.getLogger(__name__)
@@ -65,8 +67,12 @@ async def main() -> None:
     dp.callback_query.outer_middleware(
         ThrottlingMiddleware(settings.rate_limit_per_minute)
     )
+    stats = BotStats()
+    dp.message.outer_middleware(UsersMiddleware(stats))
+    dp.callback_query.outer_middleware(UsersMiddleware(stats))
 
     dp.include_router(errors_router)
+    dp.include_router(admin_router)
     dp.include_router(start_router)
     dp.include_router(help_router)
     dp.include_router(menu_router)
