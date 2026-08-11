@@ -37,23 +37,17 @@ async def cmd_rate(message: Message, cache: TTLCache) -> None:
     key = f"fx:{code}"
     try:
         quote: FxQuote = await cache.get_or_set(
-            key,
-            lambda: _fetch_quote(code),
-            settings.cache_ttl_fx_seconds,
+            key, lambda: fetch_fx(code), settings.cache_ttl_fx_seconds
         )
     except Exception:  # noqa: BLE001 — граница внешнего API, ошибка уже залогирована
         await message.answer("😔 Не удалось получить курс от ЦБ РФ. Попробуй позже.")
         return
-    await message.answer(
-        f"💱 <b>{quote.name}</b> ({quote.code})\n"
-        f"Курс: <b>{quote.value:.2f} ₽</b>"
-        + (f" за {quote.nominal}" if quote.nominal != 1 else "")
-        + "\n\nИсточник: ЦБ РФ"
-    )
+    await message.answer(format_fx(quote))
 
 
-async def _fetch_quote(code: str) -> FxQuote:
+async def fetch_fx(code: str) -> FxQuote:
     """Получает курс из ЦБ РФ через отдельный HTTP-сеанс."""
+    code = code.upper()
     async with aiohttp.ClientSession() as session:
         client = CBRClient()
         try:
@@ -61,3 +55,12 @@ async def _fetch_quote(code: str) -> FxQuote:
         except Exception:
             log.exception("Не удалось получить курс %s от ЦБ РФ", code)
             raise
+
+
+def format_fx(quote: FxQuote) -> str:
+    """Форматирует курс валюты для Telegram (HTML)."""
+    suffix = f" за {quote.nominal}" if quote.nominal != 1 else ""
+    return (
+        f"💱 <b>{quote.name}</b> ({quote.code})\n"
+        f"Курс: <b>{quote.value:.2f} ₽</b>{suffix}\n\nИсточник: ЦБ РФ"
+    )

@@ -25,6 +25,8 @@ COINS = {
     "ADA": "cardano",
     "LTC": "litecoin",
     "BNB": "binancecoin",
+    "AVAX": "avalanche-2",
+    "DOT": "polkadot",
 }
 
 COIN_RE = re.compile(r"^[A-Z0-9]{2,10}$")
@@ -46,24 +48,15 @@ async def cmd_crypto(message: Message, cache: TTLCache) -> None:
     key = f"crypto:{raw}"
     try:
         quote: StockQuote = await cache.get_or_set(
-            key,
-            lambda: _fetch_quote(raw),
-            settings.cache_ttl_stock_seconds,
+            key, lambda: fetch_crypto(raw), settings.cache_ttl_stock_seconds
         )
     except Exception:  # noqa: BLE001 — граница внешнего API, ошибка уже залогирована
         await message.answer("😔 Не удалось получить цену. Попробуй позже.")
         return
-
-    sign = "+" if quote.change_percent >= 0 else ""
-    change = (
-        f"\nИзменение: {sign}{quote.change_percent:.2f}%"
-        if quote.change_percent
-        else ""
-    )
-    await message.answer(f"🪙 <b>{raw}</b>\nЦена: <b>${quote.price:,.2f}</b>{change}")
+    await message.answer(format_crypto(raw, quote))
 
 
-async def _fetch_quote(symbol: str) -> StockQuote:
+async def fetch_crypto(symbol: str) -> StockQuote:
     """Цена монеты через CoinGecko (с демо-ключом, без него — keyless)."""
     gecko_id = COINS.get(symbol, symbol.lower())
     async with aiohttp.ClientSession() as session:
@@ -73,3 +66,14 @@ async def _fetch_quote(symbol: str) -> StockQuote:
         except Exception:
             log.exception("Не удалось получить цену %s от CoinGecko", gecko_id)
             raise
+
+
+def format_crypto(symbol: str, quote: StockQuote) -> str:
+    """Форматирует цену криптовалюты для Telegram (HTML)."""
+    sign = "+" if quote.change_percent >= 0 else ""
+    change = (
+        f"\nИзменение: {sign}{quote.change_percent:.2f}%"
+        if quote.change_percent
+        else ""
+    )
+    return f"🪙 <b>{symbol}</b>\nЦена: <b>${quote.price:,.2f}</b>{change}"

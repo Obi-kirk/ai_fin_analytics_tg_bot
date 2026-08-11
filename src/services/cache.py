@@ -68,6 +68,11 @@ class TTLCache:
         await self.set(key, value, ttl_seconds)
         return value
 
+    async def delete(self, key: str) -> None:
+        """Принудительно удаляет запись (для кнопки «обновить»)."""
+        async with self._lock:
+            self._data.pop(key, None)
+
     async def clear(self) -> None:
         """Полная очистка кэша."""
         async with self._lock:

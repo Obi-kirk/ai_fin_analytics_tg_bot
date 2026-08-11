@@ -52,23 +52,15 @@ async def cmd_stock(message: Message, cache: TTLCache) -> None:
     key = f"stock:{symbol}"
     try:
         quote: StockQuote = await cache.get_or_set(
-            key,
-            lambda: _fetch_quote(symbol),
-            settings.cache_ttl_stock_seconds,
+            key, lambda: fetch_stock(symbol), settings.cache_ttl_stock_seconds
         )
     except Exception:  # noqa: BLE001 — граница внешнего API, ошибка уже залогирована
         await message.answer("😔 Не удалось получить котировку. Попробуй позже.")
         return
-
-    sign = "+" if quote.change_percent >= 0 else ""
-    await message.answer(
-        f"📈 <b>{symbol}</b>\n"
-        f"Цена: <b>${quote.price:,.2f}</b>\n"
-        f"Изменение: {sign}{quote.change_percent:.2f}%"
-    )
+    await message.answer(format_stock(quote))
 
 
-async def _fetch_quote(symbol: str) -> StockQuote:
+async def fetch_stock(symbol: str) -> StockQuote:
     """Получает котировку Finnhub через отдельный HTTP-сеанс."""
     async with aiohttp.ClientSession() as session:
         client = FinnhubClient(get_settings().finnhub_api_key)
@@ -77,3 +69,13 @@ async def _fetch_quote(symbol: str) -> StockQuote:
         except Exception:
             log.exception("Не удалось получить котировку %s от Finnhub", symbol)
             raise
+
+
+def format_stock(quote: StockQuote) -> str:
+    """Форматирует котировку акции для Telegram (HTML)."""
+    sign = "+" if quote.change_percent >= 0 else ""
+    return (
+        f"📈 <b>{quote.symbol}</b>\n"
+        f"Цена: <b>${quote.price:,.2f}</b>\n"
+        f"Изменение: {sign}{quote.change_percent:.2f}%"
+    )

@@ -16,6 +16,8 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from src.config.settings import get_settings
 from src.database.db import close_db, create_tables
 from src.handlers.crypto import router as crypto_router
+from src.handlers.help import router as help_router
+from src.handlers.menu import router as menu_router
 from src.handlers.rate import router as rate_router
 from src.handlers.start import router as start_router
 from src.handlers.stock import router as stock_router
@@ -59,6 +61,8 @@ async def main() -> None:
     dp["cache"] = cache  # DI для хендлеров (ключ — имя параметра)
 
     dp.include_router(start_router)
+    dp.include_router(help_router)
+    dp.include_router(menu_router)
     dp.include_router(rate_router)
     dp.include_router(stock_router)
     dp.include_router(crypto_router)
