@@ -12,6 +12,8 @@ from src.handlers.crypto import (
 from src.handlers.rate import (
     _format_money,
     convert_amount,
+    convert_kb,
+    format_convert,
     format_fx,
     parse_convert_args,
 )
@@ -21,6 +23,7 @@ from src.handlers.stock import (
     _format_news_date,
     format_news,
     format_stock,
+    news_kb,
 )
 from src.services.financial_api import FxQuote, StockQuote
 
@@ -102,6 +105,22 @@ class TestConvert:
         assert _format_money(8260.5) == "8,260"
         assert _format_money(118.64) == "118.64"
         assert _format_money(0.5234) == "0.52"
+
+    def test_format_convert(self) -> None:
+        text = format_convert(100, "USD", "RUB", 82.6145, 1.0)
+        assert "100 USD" in text
+        assert "8,261 RUB" in text
+
+    def test_convert_kb_swap(self) -> None:
+        kb = convert_kb("USD", "RUB")
+        data = [b.callback_data for row in kb.inline_keyboard for b in row]
+        assert "conv:RUB|USD" in data  # кнопка «Поменять» меняет пару местами
+
+    def test_news_kb(self) -> None:
+        kb = news_kb("AAPL")
+        data = [b.callback_data for row in kb.inline_keyboard for b in row]
+        assert "stock:AAPL" in data  # назад к котировке
+        assert "submenu:stock" in data
 
 
 def test_format_stock_sign() -> None:

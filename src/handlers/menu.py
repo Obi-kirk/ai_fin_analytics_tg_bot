@@ -72,6 +72,16 @@ MENU_TITLES = {
     "analyse": "🤖 Выбери актив для AI-анализа",
 }
 
+# Основные пары для конвертера (кнопки в подменю валют)
+FX_PAIRS = (
+    ("USD", "RUB"),
+    ("EUR", "RUB"),
+    ("CNY", "RUB"),
+    ("USD", "EUR"),
+    ("GBP", "RUB"),
+    ("JPY", "RUB"),
+)
+
 
 def submenu_kb(kind: str) -> InlineKeyboardMarkup:
     """Inline-клавиатура подменю: тикеры + строка индексов для акций."""
@@ -83,6 +93,13 @@ def submenu_kb(kind: str) -> InlineKeyboardMarkup:
                 for n in CURRENCIES_TOP10
             ]
         )
+        for i in range(0, len(FX_PAIRS), 2):
+            builder.row(
+                *[
+                    InlineKeyboardButton(text=f"{f}→{t}", callback_data=f"conv:{f}|{t}")
+                    for f, t in FX_PAIRS[i : i + 2]
+                ]
+            )
     elif kind == "stock":
         for i in range(0, len(STOCKS_TOP10), 2):
             builder.row(
@@ -115,18 +132,20 @@ def submenu_kb(kind: str) -> InlineKeyboardMarkup:
 
 
 def refresh_kb(cache_key: str) -> InlineKeyboardMarkup:
-    """Кнопки под ответом: «Обновить» и возврат в подменю."""
+    """Кнопки под ответом: «Обновить», для акций — «Новости», возврат в подменю."""
     kind = cache_key.split(":", 1)[0]
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="🔄 Обновить", callback_data=f"refresh:{cache_key}"
-                ),
-                InlineKeyboardButton(text="↩️ Меню", callback_data=f"submenu:{kind}"),
-            ]
-        ]
+    buttons = [
+        InlineKeyboardButton(text="🔄 Обновить", callback_data=f"refresh:{cache_key}")
+    ]
+    if kind == "stock":
+        symbol = cache_key.split(":", 1)[1]
+        buttons.append(
+            InlineKeyboardButton(text="📰 Новости", callback_data=f"news:{symbol}")
+        )
+    buttons.append(
+        InlineKeyboardButton(text="↩️ Меню", callback_data=f"submenu:{kind}")
     )
+    return InlineKeyboardMarkup(inline_keyboard=[buttons])
 
 
 # ------------------------------------------------------------ reply-обработчики

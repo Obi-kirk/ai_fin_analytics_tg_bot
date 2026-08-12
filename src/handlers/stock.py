@@ -2,11 +2,18 @@
 
 import logging
 import re
+from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
+from typing import Any
 
-from aiogram import Router
+from aiogram import F, Router
 from aiogram.filters import Command
-from aiogram.types import Message
+from aiogram.types import (
+    CallbackQuery,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    Message,
+)
 
 from src.config.settings import get_settings
 from src.services.cache import TTLCache
@@ -131,6 +138,27 @@ async def cmd_news(message: Message, cache: TTLCache) -> None:
         await message.answer("Некорректный тикер.")
         return
 
+    await _send_news(message.answer, symbol, cache)
+
+
+def news_kb(symbol: str) -> InlineKeyboardMarkup:
+    """Кнопки под новостями: назад к котировке и возврат в подменю акций."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="↩️ К акции", callback_data=f"stock:{symbol}"
+                ),
+                InlineKeyboardButton(text="↩️ Меню", callback_data="submenu:stock"),
+            ]
+        ]
+    )
+
+
+async def _send_news(
+    send: Callable[..., Awaitable[Any]], symbol: str, cache: TTLCache
+) -> None:
+    """Достаёт новости из кэша/API и отправляет (текст, кнопки)."""
     settings = get_settings()
     try:
         news = await cache.get_or_set(
@@ -139,14 +167,20 @@ async def cmd_news(message: Message, cache: TTLCache) -> None:
             settings.cache_ttl_fundamental_seconds,
         )
     except ApiRateLimitError:
-        await message.answer(
-            "⚠️ Превышен лимит запросов к API новостей. Попробуй через минуту."
-        )
+        await send("⚠️ Превышен лимит запросов к API новостей. Попробуй через минуту.")
         return
     except Exception:  # noqa: BLE001 — граница внешнего API, ошибка уже залогирована
-        await message.answer("😔 Не удалось получить новости. Попробуй позже.")
+        await send("😔 Не удалось получить новости. Попробуй позже.")
         return
-    await message.answer(format_news(symbol, news))
+    await send(format_news(symbol, news), reply_markup=news_kb(symbol))
+
+
+@router.callback_query(F.data.regexp(r"^news:[A-Z0-9.\-^]+$"))
+async def on_news_cb(callback: CallbackQuery, cache: TTLCache) -> None:
+    """Открывает новости акции прямо из подменю (кнопка «📰 Новости»)."""
+    symbol = callback.data.split(":", 1)[1]
+    await _send_news(callback.message.edit_text, symbol, cache)
+    await callback.answer()
 
 
 def format_stock(quote: StockQuote) -> str:

@@ -3,9 +3,14 @@
 import logging
 import re
 
-from aiogram import Router
+from aiogram import F, Router
 from aiogram.filters import Command
-from aiogram.types import Message
+from aiogram.types import (
+    CallbackQuery,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    Message,
+)
 
 from src.config.settings import get_settings
 from src.services.cache import TTLCache
@@ -23,6 +28,31 @@ router = Router()
 _FX_RUB = FxQuote(code="RUB", name="Российский рубль", value=1.0, nominal=1)
 
 _CONVERT_RE = re.compile(r"^\s*(\d+(?:[.,]\d+)?)\s+([A-Za-z]{3})\s+([A-Za-z]{3})\s*$")
+
+_CONVERT_DEFAULT_AMOUNT = 100
+
+
+@router.callback_query(F.data.regexp(r"^conv:[A-Z]{3}\|[A-Z]{3}$"))
+async def on_convert_pair(callback: CallbackQuery, cache: TTLCache) -> None:
+    """Конвертирует 100 единиц пары из подменю валют (кнопка «из→в»)."""
+    from_code, to_code = callback.data.split(":", 1)[1].split("|")
+    try:
+        from_quote = await _get_fx(from_code, cache)
+        to_quote = await _get_fx(to_code, cache)
+    except Exception:  # noqa: BLE001 — граница внешнего API, ошибка уже залогирована
+        await callback.answer("😔 Не удалось получить курсы. Попробуй позже.")
+        return
+    await callback.message.edit_text(
+        format_convert(
+            _CONVERT_DEFAULT_AMOUNT,
+            from_code,
+            to_code,
+            from_quote.value,
+            to_quote.value,
+        ),
+        reply_markup=convert_kb(from_code, to_code),
+    )
+    await callback.answer()
 
 
 def parse_convert_args(text: str) -> tuple[float, str, str] | None:
@@ -76,6 +106,32 @@ def _format_money(value: float) -> str:
     return f"{value:,.2f}"
 
 
+def format_convert(
+    amount: float, from_code: str, to_code: str, from_value: float, to_value: float
+) -> str:
+    """Форматирует результат конвертации для Telegram (HTML)."""
+    result = convert_amount(amount, from_value, to_value)
+    return (
+        f"💱 <b>{_format_money(amount)} {from_code}</b> = "
+        f"<b>{_format_money(result)} {to_code}</b>\n\nИсточник: ЦБ РФ"
+    )
+
+
+def convert_kb(from_code: str, to_code: str) -> InlineKeyboardMarkup:
+    """Кнопки под конвертацией: «Поменять местами» и возврат в подменю валют."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="🔁 Поменять",
+                    callback_data=f"conv:{to_code}|{from_code}",
+                ),
+                InlineKeyboardButton(text="↩️ Меню", callback_data="submenu:fx"),
+            ]
+        ]
+    )
+
+
 @router.message(Command("convert"))
 async def cmd_convert(message: Message, cache: TTLCache) -> None:
     """Конвертирует валюты: /convert 100 USD RUB."""
@@ -95,11 +151,8 @@ async def cmd_convert(message: Message, cache: TTLCache) -> None:
     except Exception:  # noqa: BLE001 — граница внешнего API, ошибка уже залогирована
         await message.answer("😔 Не удалось получить курс от ЦБ РФ. Попробуй позже.")
         return
-
-    result = convert_amount(amount, from_quote.value, to_quote.value)
     await message.answer(
-        f"💱 <b>{_format_money(amount)} {from_code}</b> = "
-        f"<b>{_format_money(result)} {to_code}</b>\n\nИсточник: ЦБ РФ"
+        format_convert(amount, from_code, to_code, from_quote.value, to_quote.value)
     )
 
 
