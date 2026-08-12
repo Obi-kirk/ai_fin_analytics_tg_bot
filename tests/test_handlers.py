@@ -9,7 +9,12 @@ from src.handlers.crypto import (
     format_top,
     format_trending,
 )
-from src.handlers.rate import format_fx
+from src.handlers.rate import (
+    _format_money,
+    convert_amount,
+    format_fx,
+    parse_convert_args,
+)
 from src.handlers.stock import (
     INDEX_ALIASES,
     TICKER_RE,
@@ -64,6 +69,39 @@ def test_format_fx_with_nominal() -> None:
         FxQuote(code="JPY", name="Японская иена", value=0.5234, nominal=100)
     )
     assert "за 100" in text
+
+
+class TestConvert:
+    def test_parse_valid(self) -> None:
+        assert parse_convert_args("100 USD RUB") == (100.0, "USD", "RUB")
+        assert parse_convert_args(" 10.50 eur usd ") == (10.5, "EUR", "USD")
+        assert parse_convert_args("1000,25 USD RUB") == (1000.25, "USD", "RUB")
+
+    def test_parse_invalid(self) -> None:
+        assert parse_convert_args("100 USD") is None
+        assert parse_convert_args("abc USD RUB") is None
+        assert parse_convert_args("100 USD R") is None
+        assert parse_convert_args("") is None
+
+    def test_convert_usd_to_rub(self) -> None:
+        assert convert_amount(100, 82.6, 1.0) == 8260.0
+
+    def test_convert_rub_to_usd(self) -> None:
+        assert convert_amount(8260, 1.0, 82.6) == pytest.approx(100.0)
+
+    def test_convert_cross(self) -> None:
+        # 100 EUR -> USD: 100 * 98.0 / 82.6
+        assert convert_amount(100, 98.0, 82.6) == pytest.approx(118.64, abs=0.01)
+
+    def test_convert_zero_target_raises(self) -> None:
+        with pytest.raises(ValueError):
+            convert_amount(10, 1.0, 0.0)
+
+    def test_format_money(self) -> None:
+        assert _format_money(8260) == "8,260"
+        assert _format_money(8260.5) == "8,260"
+        assert _format_money(118.64) == "118.64"
+        assert _format_money(0.5234) == "0.52"
 
 
 def test_format_stock_sign() -> None:
