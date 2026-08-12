@@ -23,6 +23,9 @@ class User(Base):
     is_banned: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false"
     )
+    role: Mapped[str] = mapped_column(
+        String(16), default="user", server_default="user", nullable=False
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, server_default="now()"
     )

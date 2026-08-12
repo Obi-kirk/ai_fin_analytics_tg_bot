@@ -5,8 +5,9 @@
 """
 
 import logging
+from typing import Any
 
-from aiogram import Bot, F, Router
+from aiogram import Bot, Router
 from aiogram.filters import Command, CommandObject
 from aiogram.filters.callback_data import CallbackData
 from aiogram.types import CallbackQuery, InlineKeyboardMarkup, Message
@@ -17,6 +18,7 @@ from sqlalchemy import func, select, update
 from src.config.settings import get_settings
 from src.database.db import get_session
 from src.database.models import QueryLog, User
+from src.filters import AdminFilter, SuperAdminFilter
 from src.middleware.users import BotStats
 from src.services.cache import TTLCache
 
@@ -45,17 +47,12 @@ _pending_broadcast: dict[int, tuple[int, str]] = {}
 
 
 def _is_admin(user: TelegramUser) -> bool:
-    """Проверка прав администратора (AGENTS.md п.4)."""
+    """Совместимость: проверка по ADMIN_ID из .env (без обращения к БД)."""
     admin_id = get_settings().admin_id
     return bool(admin_id) and user.id == admin_id
 
 
-def is_admin_command(user: TelegramUser) -> bool:
-    """Фильтр для команд, доступных только администратору."""
-    return _is_admin(user)
-
-
-@router.message(Command("admin"), F.from_user.func(is_admin_command))
+@router.message(Command("admin"), AdminFilter())
 async def cmd_admin(message: Message, stats: BotStats, cache: TTLCache) -> None:
     """Панель администратора: пользователи, кэш, аптайм, популярные команды."""
     async for session in get_session():
@@ -84,7 +81,7 @@ async def cmd_admin(message: Message, stats: BotStats, cache: TTLCache) -> None:
     )
 
 
-@router.message(Command("cachestats"), F.from_user.func(is_admin_command))
+@router.message(Command("cachestats"), AdminFilter())
 async def cmd_cachestats(message: Message, cache: TTLCache) -> None:
     """Статистика кэша: попадания, промахи, количество записей."""
     stats = await cache.stats()
@@ -99,13 +96,13 @@ async def cmd_cachestats(message: Message, cache: TTLCache) -> None:
     )
 
 
-@router.message(Command("users"), F.from_user.func(is_admin_command))
+@router.message(Command("users"), AdminFilter())
 async def cmd_users(message: Message) -> None:
     """Список пользователей, первая страница."""
     await _show_users_page(message, page=1)
 
 
-@router.message(Command("recent"), F.from_user.func(is_admin_command))
+@router.message(Command("recent"), AdminFilter())
 async def cmd_recent(message: Message) -> None:
     """Последние запросы пользователей (история query_log)."""
     async for session in get_session():
@@ -133,12 +130,9 @@ async def cmd_recent(message: Message) -> None:
     await message.answer("\n".join(lines))
 
 
-@router.callback_query(UsersPageCD.filter())
+@router.callback_query(UsersPageCD.filter(), AdminFilter())
 async def on_users_page(callback: CallbackQuery) -> None:
     """Листает страницы списка пользователей."""
-    if not _is_admin(callback.from_user):
-        await callback.answer("Недостаточно прав. ⚠️")
-        return
     await _edit_users_page(callback, page=UsersPageCD.unpack(callback.data).page)
 
 
@@ -161,12 +155,17 @@ async def _users_page_text(page: int) -> tuple[str, int, bool]:
     pages = max(1, (total + USERS_PER_PAGE - 1) // USERS_PER_PAGE)
     lines = []
     for u in users:
+        role = u.role or "user"
+        badge = {
+            "admin": "👑",
+            "user": "🙂",
+        }.get(role, role)
         name = u.first_name or u.username or u.telegram_id
         banned = " 🚫" if u.is_banned else ""
         handle = f" @{u.username}" if u.username else ""
         created = u.created_at.strftime("%d.%m %H:%M") if u.created_at else "—"
         lines.append(
-            f"• <code>{u.telegram_id}</code> {name}{handle}{banned} — {created}"
+            f"• {badge} <code>{u.telegram_id}</code> {name}{handle}{banned} — {created}"
         )
     header = f"👥 <b>Пользователи</b> — всего: {total}\n"
     return header + "\n".join(lines) or header + "пока нет", pages, page < pages
@@ -195,7 +194,7 @@ async def _edit_users_page(callback: CallbackQuery, page: int) -> None:
     await callback.answer()
 
 
-@router.message(Command("broadcast"), F.from_user.func(is_admin_command))
+@router.message(Command("broadcast"), AdminFilter())
 async def cmd_broadcast(message: Message, command: CommandObject) -> None:
     """Начинает рассылку: запрашивает подтверждение у администратора."""
     text = command.args
@@ -235,12 +234,9 @@ def _confirm_kb() -> InlineKeyboardMarkup:
     return kb.as_markup()
 
 
-@router.callback_query(BroadcastCD.filter())
+@router.callback_query(BroadcastCD.filter(), AdminFilter())
 async def on_broadcast_confirm(callback: CallbackQuery, bot: Bot) -> None:
     """Обрабатывает подтверждение/отмену рассылки."""
-    if not _is_admin(callback.from_user):
-        await callback.answer("Недостаточно прав. ⚠️")
-        return
     data = BroadcastCD.unpack(callback.data)
     pending = _pending_broadcast.pop(callback.from_user.id, None)
     if not pending:
@@ -285,7 +281,7 @@ async def _do_broadcast(bot: Bot, text: str) -> tuple[int, int]:
     return sent, failed
 
 
-@router.message(Command("ban"), F.from_user.func(is_admin_command))
+@router.message(Command("ban"), AdminFilter())
 async def cmd_ban(message: Message, command: CommandObject) -> None:
     """Банит пользователя: /ban 123456789."""
     target = _parse_target(command)
@@ -305,7 +301,7 @@ async def cmd_ban(message: Message, command: CommandObject) -> None:
     )
 
 
-@router.message(Command("unban"), F.from_user.func(is_admin_command))
+@router.message(Command("unban"), AdminFilter())
 async def cmd_unban(message: Message, command: CommandObject) -> None:
     """Разбанивает пользователя: /unban 123456789."""
     target = _parse_target(command)
@@ -331,3 +327,55 @@ def _parse_target(command: CommandObject) -> int | None:
     except (ValueError, IndexError):
         return None
     return user_id
+
+
+_ROLES = ("user", "admin")
+
+
+@router.message(Command("myrole"))
+async def cmd_myrole(message: Message, role: str) -> None:
+    """Показывает роль текущего пользователя."""
+    await message.answer(f"Твоя роль: <b>{role}</b>")
+
+
+def _parse_setrole_args(args: str | None) -> tuple[int, str] | None:
+    """Разбирает аргументы /setrole: <id> <роль>. Возвращает (id, роль) или None."""
+    parts = (args or "").split()
+    if len(parts) < 2 or parts[1].lower() not in _ROLES:
+        return None
+    try:
+        return int(parts[0]), parts[1].lower()
+    except ValueError:
+        return None
+
+
+@router.message(Command("setrole"), SuperAdminFilter())
+async def cmd_setrole(
+    message: Message, command: CommandObject, invalidate_role: Any
+) -> None:
+    """Назначает роль пользователю: /setrole 123456789 admin|user.
+
+    Только владелец бота (ADMIN_ID из .env) может назначать роли.
+    """
+    parsed = _parse_setrole_args(command.args)
+    if parsed is None:
+        await message.answer(
+            "Формат: /setRole <id> <роль>\nРоли: user, admin\n"
+            "Пример: /setrole 123456789 admin"
+        )
+        return
+    target, new_role = parsed
+    async for session in get_session():
+        result = await session.execute(
+            update(User).where(User.telegram_id == target).values(role=new_role)
+        )
+        await session.commit()
+        updated = result.rowcount > 0
+    if not updated:
+        await message.answer(f"⚠️ Пользователь <code>{target}</code> не найден.")
+        return
+    if invalidate_role is not None:
+        invalidate_role(target)
+    await message.answer(
+        f"✅ Роль пользователя <code>{target}</code> → <b>{new_role}</b>"
+    )

@@ -8,14 +8,16 @@ import pytest
 from aiogram.filters import CommandObject
 from aiogram.types import User as TelegramUser
 
+import src.filters as filters_mod
+from src.filters import AdminFilter, SuperAdminFilter
 from src.handlers import admin as admin_mod
 from src.handlers.admin import (
     BroadcastCD,
     UsersPageCD,
     _is_admin,
+    _parse_setrole_args,
     _parse_target,
     _users_page_kb,
-    is_admin_command,
 )
 
 
@@ -42,13 +44,55 @@ class TestIsAdmin:
     def test_regular_user_denied(self, admin_settings) -> None:
         assert _is_admin(_user(42)) is False
 
-    def test_filter_wrapper(self, admin_settings) -> None:
-        assert is_admin_command(_user(123456789)) is True
-        assert is_admin_command(_user(42)) is False
-
     def test_no_admin_id_set(self, admin_settings: _FakeSettings) -> None:
         admin_settings.admin_id = None
         assert _is_admin(_user(123456789)) is False
+
+
+class TestParseSetrole:
+    def test_valid(self) -> None:
+        assert _parse_setrole_args("123456789 admin") == (123456789, "admin")
+        assert _parse_setrole_args(" 123 user ") == (123, "user")
+
+    def test_invalid_role(self) -> None:
+        assert _parse_setrole_args("123456789 root") is None
+
+    def test_id_not_number(self) -> None:
+        assert _parse_setrole_args("abc admin") is None
+
+    def test_empty(self) -> None:
+        assert _parse_setrole_args(None) is None
+        assert _parse_setrole_args("") is None
+
+
+class TestAdminFilter:
+    async def test_admin_passes(self) -> None:
+        assert await AdminFilter()(None, {"is_admin": True}) is True
+
+    async def test_regular_denied(self) -> None:
+        assert await AdminFilter()(None, {"is_admin": False}) is False
+
+    async def test_missing_denied(self) -> None:
+        assert await AdminFilter()(None, {}) is False
+
+
+class TestSuperAdminFilter:
+    class _Event:
+        def __init__(self, user_id: int) -> None:
+            self.from_user = TelegramUser(id=user_id, is_bot=False, first_name="T")
+
+    async def test_owner_passes(self, admin_settings, monkeypatch) -> None:
+        monkeypatch.setattr(filters_mod, "get_settings", lambda: admin_settings)
+        assert await SuperAdminFilter()(self._Event(123456789), {}) is True
+
+    async def test_other_denied(self, admin_settings, monkeypatch) -> None:
+        monkeypatch.setattr(filters_mod, "get_settings", lambda: admin_settings)
+        assert await SuperAdminFilter()(self._Event(42), {}) is False
+
+    async def test_no_admin_id(self, admin_settings, monkeypatch) -> None:
+        admin_settings.admin_id = None
+        monkeypatch.setattr(filters_mod, "get_settings", lambda: admin_settings)
+        assert await SuperAdminFilter()(self._Event(123456789), {}) is False
 
 
 class TestUsersPageKb:

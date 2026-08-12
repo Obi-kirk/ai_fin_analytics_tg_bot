@@ -18,13 +18,16 @@ class _FakeSettings:
 
 @pytest.fixture
 async def sqlite_db(monkeypatch: pytest.MonkeyPatch):
-    """Подменяет engine на файловый SQLite и создаёт таблицы."""
+    """Подменяет engine на чистый файловый SQLite и создаёт таблицы."""
+    import os
+
     monkeypatch.setattr(db_module, "get_settings", lambda: _FakeSettings())
     await db_module.close_db()
+    # create_all не меняет существующие таблицы — удаляем файл БД от прошлых прогонов
+    db_path = _FakeSettings().database_url.replace("sqlite+aiosqlite:///", "")
+    if db_path != ":memory:" and os.path.exists(db_path):
+        os.remove(db_path)
     await db_module.create_tables()
-    async for session in db_module.get_session():
-        await session.execute(db_module.Base.metadata.tables["users"].delete())
-        await session.commit()
     yield
     await db_module.close_db()
 

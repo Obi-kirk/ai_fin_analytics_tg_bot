@@ -14,6 +14,7 @@ from aiogram import BaseMiddleware
 from aiogram.types import CallbackQuery, Message, TelegramObject
 from sqlalchemy import select
 
+from src.config.settings import get_settings
 from src.database.db import get_session
 from src.database.models import User
 
@@ -50,7 +51,14 @@ class UsersMiddleware(BaseMiddleware):
     def __init__(self, stats: BotStats) -> None:
         self.stats = stats
         self._known: set[int] = set()
+        self._roles: dict[int, str] = {}
         self._banned: dict[int, float] = {}
+
+    def invalidate(self, user_id: int) -> None:
+        """Сбрасывает кэш пользователя (например, после смены роли)."""
+        self._known.discard(user_id)
+        self._roles.pop(user_id, None)
+        self._banned.pop(user_id, None)
 
     async def __call__(
         self,
@@ -70,19 +78,27 @@ class UsersMiddleware(BaseMiddleware):
             self.stats.callbacks += 1
 
         data["stats"] = self.stats
+        data["invalidate_role"] = self.invalidate
         if user_id is None:
             return await handler(event, data)
 
-        await self._track_user(user_id, event)
+        role, is_admin = await self._track_user(user_id, event)
+        data["role"] = role
+        data["is_admin"] = is_admin
         if await self._is_banned(user_id):
             log.info("Отклонён запрос забаненного пользователя id=%s", user_id)
             return None
         return await handler(event, data)
 
-    async def _track_user(self, user_id: int, event: TelegramObject) -> None:
-        """Записывает нового пользователя в БД (один раз), обновляет имя."""
+    async def _track_user(
+        self, user_id: int, event: TelegramObject
+    ) -> tuple[str, bool]:
+        """Записывает нового пользователя в БД (один раз); возвращает (role, is_admin)."""
+        settings = get_settings()
+        super_admin = bool(settings.admin_id) and user_id == settings.admin_id
         if user_id in self._known:
-            return
+            role = self._roles.get(user_id, "user")
+            return role, super_admin or role == "admin"
         first_name = (
             event.from_user.first_name
             if isinstance(event, (Message, CallbackQuery)) and event.from_user
@@ -103,11 +119,15 @@ class UsersMiddleware(BaseMiddleware):
                         username=username,
                     )
                 )
+                role = "user"
             else:
                 user.first_name = first_name or user.first_name
                 user.username = username or user.username
+                role = user.role or "user"
             await session.commit()
         self._known.add(user_id)
+        self._roles[user_id] = role
+        return role, super_admin or role == "admin"
 
     async def _is_banned(self, user_id: int) -> bool:
         """Проверяет бан с коротким in-memory кэшем."""

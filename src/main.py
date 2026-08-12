@@ -66,6 +66,7 @@ async def _setup_bot_commands(bot: Bot, admin_id: int | None) -> None:
         BotCommand(command="top", description="Топ по капитализации"),
         BotCommand(command="news", description="Новости по тикеру: /news AAPL"),
         BotCommand(command="analyze", description="AI-анализ: /analyze BTC"),
+        BotCommand(command="myrole", description="Моя роль"),
         BotCommand(command="help", description="Справка"),
     ]
     await bot.set_my_commands(user_commands)
@@ -81,6 +82,9 @@ async def _setup_bot_commands(bot: Bot, admin_id: int | None) -> None:
                 BotCommand(command="unban", description="Разбан: /unban id"),
                 BotCommand(command="cachestats", description="Статистика кэша"),
                 BotCommand(command="recent", description="Последние запросы"),
+                BotCommand(
+                    command="setrole", description="Назначить роль: /setRole id role"
+                ),
             ],
             scope=BotCommandScopeChat(chat_id=admin_id),
         )
