@@ -10,6 +10,7 @@ from src.handlers.crypto import (
     format_trending,
 )
 from src.handlers.rate import (
+    CONVERT_CURRENCIES,
     _format_money,
     convert_amount,
     convert_kb,
@@ -25,7 +26,7 @@ from src.handlers.stock import (
     format_stock,
     news_kb,
 )
-from src.services.financial_api import FxQuote, StockQuote
+from src.services.financial_api import CBR_CURRENCIES, FxQuote, StockQuote
 
 
 @pytest.mark.parametrize(
@@ -112,9 +113,41 @@ class TestConvert:
         assert "8,261 RUB" in text
 
     def test_convert_kb_swap(self) -> None:
-        kb = convert_kb("USD", "RUB")
+        kb = convert_kb(100.0, "USD", "RUB")
         data = [b.callback_data for row in kb.inline_keyboard for b in row]
-        assert "conv:RUB|USD" in data  # кнопка «Поменять» меняет пару местами
+        assert "conv:swap|100.0|RUB|USD" in data  # «Поменять» меняет пару местами
+        assert "conv:start" in data  # «Ещё раз» — новый диалог
+
+    def test_convert_currencies_include_rub(self) -> None:
+        assert "RUB" in CONVERT_CURRENCIES
+        assert {"USD", "EUR", "GBP", "CNY", "JPY"} <= set(CONVERT_CURRENCIES)
+
+    def test_convert_currencies_order(self) -> None:
+        # порядок кнопок: RUB первым, дальше по популярности для пользователя
+        assert CONVERT_CURRENCIES == (
+            "RUB",
+            "USD",
+            "EUR",
+            "CNY",
+            "AED",
+            "VND",
+            "THB",
+            "TRY",
+            "GBP",
+            "JPY",
+        )
+
+    def test_rate_currencies_extended(self) -> None:
+        # дирхам/бат/донг должны быть доступны (были в меню, но отклонялись)
+        assert {
+            "AED",
+            "TRY",
+            "VND",
+            "THB",
+            "CHF",
+            "KZT",
+            "CZK",
+        } <= CBR_CURRENCIES
 
     def test_news_kb(self) -> None:
         kb = news_kb("AAPL")

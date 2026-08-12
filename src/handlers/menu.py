@@ -43,11 +43,13 @@ CURRENCIES_TOP10 = (
     "GBP",
     "CNY",
     "JPY",
-    "CHF",
+    "AED",
     "TRY",
+    "VND",
+    "THB",
+    "CHF",
     "KZT",
     "CZK",
-    "AED",
 )
 STOCKS_TOP10 = (
     "AAPL",
@@ -72,32 +74,19 @@ MENU_TITLES = {
     "analyse": "🤖 Выбери актив для AI-анализа",
 }
 
-# Основные пары для конвертера (кнопки в подменю валют)
-FX_PAIRS = (
-    ("USD", "RUB"),
-    ("EUR", "RUB"),
-    ("CNY", "RUB"),
-    ("USD", "EUR"),
-    ("GBP", "RUB"),
-    ("JPY", "RUB"),
-)
-
 
 def submenu_kb(kind: str) -> InlineKeyboardMarkup:
     """Inline-клавиатура подменю: тикеры + строка индексов для акций."""
     builder = InlineKeyboardBuilder()
     if kind == "fx":
         builder.row(
-            *[
-                InlineKeyboardButton(text=n, callback_data=f"fx:{n}")
-                for n in CURRENCIES_TOP10
-            ]
+            InlineKeyboardButton(text="💱 Перевод валют", callback_data="conv:start")
         )
-        for i in range(0, len(FX_PAIRS), 2):
+        for i in range(0, len(CURRENCIES_TOP10), 4):
             builder.row(
                 *[
-                    InlineKeyboardButton(text=f"{f}→{t}", callback_data=f"conv:{f}|{t}")
-                    for f, t in FX_PAIRS[i : i + 2]
+                    InlineKeyboardButton(text=n, callback_data=f"fx:{n}")
+                    for n in CURRENCIES_TOP10[i : i + 4]
                 ]
             )
     elif kind == "stock":

@@ -1,16 +1,23 @@
-"""Обработчик команд /rate и /convert — валюты ЦБ РФ с кэшированием."""
+"""Обработчик команд /rate и /convert — валюты ЦБ РФ с кэшированием.
+
+/convert (и кнопка «💱 Перевод валют») работает через FSM-диалог:
+сумма → валюта «из» → валюта «в» → результат.
+"""
 
 import logging
 import re
 
 from aiogram import F, Router
 from aiogram.filters import Command
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import (
     CallbackQuery,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     Message,
 )
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from src.config.settings import get_settings
 from src.services.cache import TTLCache
@@ -27,32 +34,196 @@ router = Router()
 # Рубль — базовая валюта ЦБ РФ, курса в XML нет
 _FX_RUB = FxQuote(code="RUB", name="Российский рубль", value=1.0, nominal=1)
 
+# Валюты для выбора в диалоге конвертации (порядок кнопок)
+CONVERT_CURRENCIES = (
+    "RUB",
+    "USD",
+    "EUR",
+    "CNY",
+    "AED",
+    "VND",
+    "THB",
+    "TRY",
+    "GBP",
+    "JPY",
+)
+
+# Готовые суммы на первом шаге диалога
+_AMOUNT_PRESETS = (100, 200, 500, 1000, 5000)
+
 _CONVERT_RE = re.compile(r"^\s*(\d+(?:[.,]\d+)?)\s+([A-Za-z]{3})\s+([A-Za-z]{3})\s*$")
 
-_CONVERT_DEFAULT_AMOUNT = 100
+_AMOUNT_MAX = 1_000_000_000
 
 
-@router.callback_query(F.data.regexp(r"^conv:[A-Z]{3}\|[A-Z]{3}$"))
-async def on_convert_pair(callback: CallbackQuery, cache: TTLCache) -> None:
-    """Конвертирует 100 единиц пары из подменю валют (кнопка «из→в»)."""
-    from_code, to_code = callback.data.split(":", 1)[1].split("|")
+class ConvertState(StatesGroup):
+    """Шаги диалога конвертации валют."""
+
+    amount = State()
+    from_code = State()
+    to_code = State()
+
+
+def currency_kb(prefix: str, exclude: str | None = None) -> InlineKeyboardMarkup:
+    """Кнопки выбора валюты (шаг «из»/«в») + кнопка «Отмена»."""
+    builder = InlineKeyboardBuilder()
+    codes = [c for c in CONVERT_CURRENCIES if c != exclude]
+    for i in range(0, len(codes), 3):
+        builder.row(
+            *[
+                InlineKeyboardButton(text=c, callback_data=f"{prefix}:{c}")
+                for c in codes[i : i + 3]
+            ]
+        )
+    builder.row(InlineKeyboardButton(text="❌ Отмена", callback_data="conv:cancel"))
+    return builder.as_markup()
+
+
+async def _ask_from(callback: CallbackQuery, state: FSMContext) -> None:
+    """Спрашивает валюту «из» (после ввода суммы)."""
+    await state.set_state(ConvertState.from_code)
+    await callback.message.edit_text(
+        "Из какой валюты переводим?", reply_markup=currency_kb("cvfrom")
+    )
+    await callback.answer()
+
+
+def amount_kb() -> InlineKeyboardMarkup:
+    """Готовые суммы + отмена на первом шаге диалога."""
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        *[
+            InlineKeyboardButton(text=str(n), callback_data=f"conv:amount:{n}")
+            for n in _AMOUNT_PRESETS
+        ]
+    )
+    builder.row(InlineKeyboardButton(text="❌ Отмена", callback_data="conv:cancel"))
+    return builder.as_markup()
+
+
+async def _start_dialog(callback: CallbackQuery, state: FSMContext) -> None:
+    """Начало диалога из callback: редактируем сообщение и просим сумму."""
+    await state.clear()
+    await state.set_state(ConvertState.amount)
+    await callback.message.edit_text(
+        "💱 <b>Перевод валют</b>\n\nВведи сумму числом (например: 100 или 2500.50) "
+        "или выбери готовую:\n(/cancel чтобы выйти)",
+        reply_markup=amount_kb(),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "conv:start")
+async def on_conv_start(callback: CallbackQuery, state: FSMContext) -> None:
+    """Начало диалога: просим ввести сумму."""
+    await _start_dialog(callback, state)
+
+
+@router.callback_query(F.data.regexp(r"^conv:amount:\d+$"))
+async def on_conv_amount_preset(callback: CallbackQuery, state: FSMContext) -> None:
+    """Принимает готовую сумму и спрашивает валюту «из»."""
+    amount = float(callback.data.split(":", 2)[2])
+    await state.update_data(amount=amount)
+    await state.set_state(ConvertState.from_code)
+    await callback.message.edit_text(
+        f"Сумма: <b>{_format_money(amount)}</b>. Из какой валюты переводим?",
+        reply_markup=currency_kb("cvfrom"),
+    )
+    await callback.answer()
+
+
+@router.message(ConvertState.amount)
+async def on_convert_amount(
+    message: Message, state: FSMContext, cache: TTLCache
+) -> None:
+    """Принимает сумму и спрашивает валюту «из»."""
+    raw = (message.text or "").strip().replace(",", ".")
+    try:
+        amount = float(raw)
+    except ValueError:
+        await message.answer("Это не похоже на число. Попробуй ещё раз.")
+        return
+    if not 0 < amount <= _AMOUNT_MAX:
+        await message.answer("Сумма должна быть больше нуля и не слишком большой.")
+        return
+    await state.update_data(amount=amount)
+    await state.set_state(ConvertState.from_code)
+    await message.answer(
+        "Из какой валюты переводим?", reply_markup=currency_kb("cvfrom")
+    )
+
+
+@router.callback_query(F.data.regexp(r"^cvfrom:[A-Z]{3}$"))
+async def on_conv_from(callback: CallbackQuery, state: FSMContext) -> None:
+    """Принимает валюту «из» и спрашивает валюту «в»."""
+    from_code = callback.data.split(":", 1)[1]
+    if not (from_code in CONVERT_CURRENCIES):
+        await callback.answer("Валюта не поддерживается.")
+        return
+    await state.update_data(from_code=from_code)
+    await state.set_state(ConvertState.to_code)
+    await callback.message.edit_text(
+        f"Из <b>{from_code}</b>. В какую валюту переводим?",
+        reply_markup=currency_kb("cvto", exclude=from_code),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.regexp(r"^cvto:[A-Z]{3}$"))
+async def on_conv_to(
+    callback: CallbackQuery, state: FSMContext, cache: TTLCache
+) -> None:
+    """Принимает валюту «в», считает результат и показывает его."""
+    to_code = callback.data.split(":", 1)[1]
+    data = await state.get_data()
+    amount: float | None = data.get("amount")
+    from_code: str | None = data.get("from_code")
+    await state.clear()
+    if not amount or not from_code:
+        await callback.message.edit_text("Диалог устарел, начни заново.")
+        return
     try:
         from_quote = await _get_fx(from_code, cache)
         to_quote = await _get_fx(to_code, cache)
     except Exception:  # noqa: BLE001 — граница внешнего API, ошибка уже залогирована
-        await callback.answer("😔 Не удалось получить курсы. Попробуй позже.")
+        await callback.message.edit_text(
+            "😔 Не удалось получить курсы. Попробуй позже.",
+            reply_markup=InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [
+                        InlineKeyboardButton(
+                            text="💱 Ещё раз", callback_data="conv:start"
+                        )
+                    ]
+                ]
+            ),
+        )
+        await callback.answer()
         return
     await callback.message.edit_text(
-        format_convert(
-            _CONVERT_DEFAULT_AMOUNT,
-            from_code,
-            to_code,
-            from_quote.value,
-            to_quote.value,
-        ),
-        reply_markup=convert_kb(from_code, to_code),
+        format_convert(amount, from_code, to_code, from_quote.value, to_quote.value),
+        reply_markup=convert_kb(amount, from_code, to_code),
     )
     await callback.answer()
+
+
+@router.callback_query(F.data == "conv:cancel")
+async def on_conv_cancel(callback: CallbackQuery, state: FSMContext) -> None:
+    """Отменяет диалог перевода валют."""
+    await state.clear()
+    await callback.message.edit_text("❌ Перевод отменён.")
+    await callback.answer()
+
+
+@router.message(Command("cancel"))
+async def cmd_cancel(message: Message, state: FSMContext) -> None:
+    """Отменяет активный диалог (/convert)."""
+    current = await state.get_state()
+    if current is None:
+        await message.answer("Нет активного диалога.")
+        return
+    await state.clear()
+    await message.answer("❌ Отменено.")
 
 
 def parse_convert_args(text: str) -> tuple[float, str, str] | None:
@@ -117,34 +288,59 @@ def format_convert(
     )
 
 
-def convert_kb(from_code: str, to_code: str) -> InlineKeyboardMarkup:
-    """Кнопки под конвертацией: «Поменять местами» и возврат в подменю валют."""
+def convert_kb(amount: float, from_code: str, to_code: str) -> InlineKeyboardMarkup:
+    """Кнопки под результатом: «Поменять», «Ещё раз» и возврат в подменю валют."""
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
                     text="🔁 Поменять",
-                    callback_data=f"conv:{to_code}|{from_code}",
+                    callback_data=f"conv:swap|{amount}|{to_code}|{from_code}",
                 ),
+                InlineKeyboardButton(text="💱 Ещё раз", callback_data="conv:start"),
+            ],
+            [
                 InlineKeyboardButton(text="↩️ Меню", callback_data="submenu:fx"),
-            ]
+            ],
         ]
     )
 
 
+@router.callback_query(F.data.regexp(r"^conv:swap\|[\d.]+\|[A-Z]{3}\|[A-Z]{3}$"))
+async def on_conv_swap(callback: CallbackQuery, cache: TTLCache) -> None:
+    """Пересчитывает конвертацию с теми же числами, поменяв валюты местами."""
+    _, raw_amount, from_code, to_code = callback.data.split("|")
+    amount = float(raw_amount)
+    try:
+        from_quote = await _get_fx(from_code, cache)
+        to_quote = await _get_fx(to_code, cache)
+    except Exception:  # noqa: BLE001 — граница внешнего API, ошибка уже залогирована
+        await callback.answer("😔 Не удалось получить курсы. Попробуй позже.")
+        return
+    await callback.message.edit_text(
+        format_convert(amount, from_code, to_code, from_quote.value, to_quote.value),
+        reply_markup=convert_kb(amount, from_code, to_code),
+    )
+    await callback.answer()
+
+
 @router.message(Command("convert"))
-async def cmd_convert(message: Message, cache: TTLCache) -> None:
-    """Конвертирует валюты: /convert 100 USD RUB."""
+async def cmd_convert(message: Message, state: FSMContext, cache: TTLCache) -> None:
+    """Конвертирует валюты: /convert 100 USD RUB или диалогом через кнопку."""
     args = parse_convert_args(message.text.partition(" ")[2])
     if args is None:
+        await state.clear()
+        await state.set_state(ConvertState.amount)
         await message.answer(
-            "Формат: /convert <сумма> <из> <в>\n"
-            "Пример: /convert 100 USD RUB\n"
-            f"Доступны: RUB, {', '.join(sorted(CBR_CURRENCIES))}"
+            "💱 <b>Перевод валют</b>\n\nВведи сумму числом, например: 100 или 2500.50\n"
+            "Или одной командой: /convert 100 USD RUB\n"
+            "(/cancel чтобы выйти)"
         )
         return
     amount, from_code, to_code = args
-
+    if from_code not in CONVERT_CURRENCIES or to_code not in CONVERT_CURRENCIES:
+        await message.answer(f"Доступны: {', '.join(sorted(CONVERT_CURRENCIES))}")
+        return
     try:
         from_quote = await _get_fx(from_code, cache)
         to_quote = await _get_fx(to_code, cache)

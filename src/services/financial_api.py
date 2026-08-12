@@ -30,7 +30,22 @@ class ApiRateLimitError(RuntimeError):
 
 
 # Поддерживаемые валюты ЦБ РФ (коды ISO)
-CBR_CURRENCIES = frozenset({"USD", "EUR", "GBP", "CNY", "JPY"})
+CBR_CURRENCIES = frozenset(
+    {
+        "USD",
+        "EUR",
+        "GBP",
+        "CNY",
+        "JPY",
+        "AED",
+        "TRY",
+        "VND",
+        "THB",
+        "CHF",
+        "KZT",
+        "CZK",
+    }
+)
 
 BASE_HEADERS = {"User-Agent": "ai-parser-bot/0.1 (finance telegram bot)"}
 HTTP_TIMEOUT_SECONDS = 10
