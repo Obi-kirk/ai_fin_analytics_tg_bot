@@ -27,19 +27,28 @@ from src.services.financial_api import (
 log = logging.getLogger(__name__)
 router = Router()
 
-# Индексы и их тикеры: пользователь пишет SPX, бот запрашивает ^GSPC
+# Индексы и их тикеры: пользователь пишет SPX, бот запрашивает ETF-аналог.
+# Finnhub /quote отдаёт только акции и ETF — индексы (^GSPC и т.п.) не поддерживает.
 INDEX_ALIASES = {
-    "SPX": "^GSPC",
-    "S&P500": "^GSPC",
-    "S&P": "^GSPC",
-    "DJI": "^DJI",
-    "DOW": "^DJI",
-    "IXIC": "^IXIC",
-    "NASDAQ": "^IXIC",
-    "VIX": "^VIX",
+    "SPX": "SPY",
+    "S&P500": "SPY",
+    "S&P": "SPY",
+    "DJI": "DIA",
+    "DOW": "DIA",
+    "IXIC": "QQQ",
+    "NASDAQ": "QQQ",
+    "VIX": "VIXY",
 }
 
 TICKER_RE = re.compile(r"^[A-Z0-9.\-^]{1,15}$")
+
+
+def resolve_stock_symbol(raw: str) -> str:
+    """Возвращает реальный тикер для запроса: индексы -> ETF-аналоги.
+
+    Finnhub /quote отдаёт только акции и ETF; ^GSPC, ^DJI и т.п. не поддерживает.
+    """
+    return INDEX_ALIASES.get(raw.upper(), raw.upper())
 
 
 @router.message(Command("stock"))
@@ -53,7 +62,7 @@ async def cmd_stock(message: Message, cache: TTLCache) -> None:
         )
         return
     raw = args[1].strip().upper()
-    symbol = INDEX_ALIASES.get(raw, raw)
+    symbol = resolve_stock_symbol(raw)
     if not TICKER_RE.match(symbol):
         await message.answer(
             f"Тикер {raw} некорректный. Допустимы буквы, цифры, точки, дефис (до 15 символов)."
@@ -74,7 +83,7 @@ async def cmd_stock(message: Message, cache: TTLCache) -> None:
     except Exception:  # noqa: BLE001 — граница внешнего API, ошибка уже залогирована
         await message.answer("😔 Не удалось получить котировку. Попробуй позже.")
         return
-    await message.answer(format_stock(quote))
+    await message.answer(format_stock(quote, display=raw))
 
 
 async def fetch_stock(symbol: str) -> StockQuote:
@@ -183,11 +192,16 @@ async def on_news_cb(callback: CallbackQuery, cache: TTLCache) -> None:
     await callback.answer()
 
 
-def format_stock(quote: StockQuote) -> str:
-    """Форматирует котировку акции для Telegram (HTML)."""
+def format_stock(quote: StockQuote, display: str | None = None) -> str:
+    """Форматирует котировку акции для Telegram (HTML).
+
+    ``display`` — как называть актив в заголовке (для индексов это исходный
+    алиас пользователя, напр. SPX, тогда как quote.symbol == SPY).
+    """
+    label = display or quote.symbol
     sign = "+" if quote.change_percent >= 0 else ""
     return (
-        f"📈 <b>{quote.symbol}</b>\n"
+        f"📈 <b>{label}</b>\n"
         f"Цена: <b>${quote.price:,.2f}</b>\n"
         f"Изменение: {sign}{quote.change_percent:.2f}%"
     )

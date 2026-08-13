@@ -56,8 +56,10 @@ def test_coin_re_invalid(coin: str) -> None:
 
 
 def test_index_aliases() -> None:
-    assert INDEX_ALIASES["SPX"] == "^GSPC"
-    assert INDEX_ALIASES["DJI"] == "^DJI"
+    assert INDEX_ALIASES["SPX"] == "SPY"
+    assert INDEX_ALIASES["DJI"] == "DIA"
+    assert INDEX_ALIASES["NASDAQ"] == "QQQ"
+    assert INDEX_ALIASES["VIX"] == "VIXY"
     unknown = "AAPL"
     assert INDEX_ALIASES.get(unknown, unknown) == "AAPL"
 

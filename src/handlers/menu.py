@@ -17,7 +17,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from src.config.settings import get_settings
 from src.handlers.crypto import fetch_crypto, format_crypto
 from src.handlers.rate import fetch_fx, format_fx
-from src.handlers.stock import fetch_stock, format_stock
+from src.handlers.stock import fetch_stock, format_stock, resolve_stock_symbol
 from src.services.cache import TTLCache
 from src.services.financial_api import ApiRateLimitError
 
@@ -211,7 +211,8 @@ async def on_fx(callback: CallbackQuery, cache: TTLCache) -> None:
 @router.callback_query(F.data.regexp(r"^stock:[A-Z0-9.\-^]+$"))
 async def on_stock(callback: CallbackQuery, cache: TTLCache) -> None:
     """Обрабатывает выбор акции/индекса из подменю."""
-    symbol = callback.data.split(":", 1)[1]
+    raw = callback.data.split(":", 1)[1]
+    symbol = resolve_stock_symbol(raw)
     settings = get_settings()
     await _quote_and_edit(
         callback,
@@ -220,6 +221,7 @@ async def on_stock(callback: CallbackQuery, cache: TTLCache) -> None:
         settings.cache_ttl_stock_seconds,
         lambda: fetch_stock(symbol),
         format_stock,
+        render_arg=raw if raw != symbol else None,
     )
 
 
