@@ -110,13 +110,12 @@ def amount_kb() -> InlineKeyboardMarkup:
 
 
 async def _start_dialog(callback: CallbackQuery, state: FSMContext) -> None:
-    """Начало диалога из callback: редактируем сообщение и просим сумму."""
+    """Начало диалога: просим выбрать актив «из»."""
     await state.clear()
-    await state.set_state(ConvertState.amount)
+    await state.set_state(ConvertState.from_code)
     await callback.message.edit_text(
-        "💱 <b>Перевод валют</b>\n\nВведи сумму числом (например: 100 или 2500.50) "
-        "или выбери готовую:\n(/cancel чтобы выйти)",
-        reply_markup=amount_kb(),
+        "💱 <b>Конвертация</b>\n\nИз какого актива переводим?",
+        reply_markup=currency_kb("cvfrom"),
     )
     await callback.answer()
 
@@ -127,15 +126,51 @@ async def on_conv_start(callback: CallbackQuery, state: FSMContext) -> None:
     await _start_dialog(callback, state)
 
 
+async def _do_convert(
+    from_code: str, to_code: str, amount: float, cache: TTLCache
+) -> str | None:
+    """Считает конвертацию; None при ошибке получения курсов."""
+    try:
+        from_rate = await _get_convert_rate(from_code, cache)
+        to_rate = await _get_convert_rate(to_code, cache)
+    except Exception:  # noqa: BLE001 — граница внешнего API, ошибка уже залогирована
+        log.warning("Не удалось получить курсы %s/%s", from_code, to_code)
+        return None
+    return format_convert(amount, from_code, to_code, from_rate, to_rate)
+
+
+def _retry_kb() -> InlineKeyboardMarkup:
+    """Кнопка «Ещё раз» при ошибке получения курсов."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="💱 Ещё раз", callback_data="conv:start")]
+        ]
+    )
+
+
 @router.callback_query(F.data.regexp(r"^conv:amount:\d+$"))
-async def on_conv_amount_preset(callback: CallbackQuery, state: FSMContext) -> None:
-    """Принимает готовую сумму и спрашивает валюту «из»."""
+async def on_conv_amount_preset(
+    callback: CallbackQuery, state: FSMContext, cache: TTLCache
+) -> None:
+    """Принимает готовую сумму и показывает результат конвертации."""
     amount = float(callback.data.split(":", 2)[2])
-    await state.update_data(amount=amount)
-    await state.set_state(ConvertState.from_code)
+    data = await state.get_data()
+    from_code = data.get("from_code")
+    to_code = data.get("to_code")
+    await state.clear()
+    if not from_code or not to_code:
+        await callback.message.edit_text("Диалог устарел, начни заново.")
+        await callback.answer()
+        return
+    text = await _do_convert(from_code, to_code, amount, cache)
+    if text is None:
+        await callback.message.edit_text(
+            "😔 Не удалось получить курсы. Попробуй позже.", reply_markup=_retry_kb()
+        )
+        await callback.answer()
+        return
     await callback.message.edit_text(
-        f"Сумма: <b>{_format_money(amount)}</b>. Из какой валюты переводим?",
-        reply_markup=currency_kb("cvfrom"),
+        text, reply_markup=convert_kb(amount, from_code, to_code)
     )
     await callback.answer()
 
@@ -144,7 +179,7 @@ async def on_conv_amount_preset(callback: CallbackQuery, state: FSMContext) -> N
 async def on_convert_amount(
     message: Message, state: FSMContext, cache: TTLCache
 ) -> None:
-    """Принимает сумму и спрашивает валюту «из»."""
+    """Принимает сумму и показывает результат конвертации."""
     raw = (message.text or "").strip().replace(",", ".")
     try:
         amount = float(raw)
@@ -154,11 +189,18 @@ async def on_convert_amount(
     if not 0 < amount <= _AMOUNT_MAX:
         await message.answer("Сумма должна быть больше нуля и не слишком большой.")
         return
-    await state.update_data(amount=amount)
-    await state.set_state(ConvertState.from_code)
-    await message.answer(
-        "Из какой валюты переводим?", reply_markup=currency_kb("cvfrom")
-    )
+    data = await state.get_data()
+    from_code = data.get("from_code")
+    to_code = data.get("to_code")
+    await state.clear()
+    if not from_code or not to_code:
+        await message.answer("Диалог устарел, начни заново: /convert")
+        return
+    text = await _do_convert(from_code, to_code, amount, cache)
+    if text is None:
+        await message.answer("😔 Не удалось получить курсы. Попробуй позже.")
+        return
+    await message.answer(text, reply_markup=convert_kb(amount, from_code, to_code))
 
 
 @router.callback_query(F.data.regexp(r"^cvfrom:[A-Z]{3}$"))
@@ -178,39 +220,20 @@ async def on_conv_from(callback: CallbackQuery, state: FSMContext) -> None:
 
 
 @router.callback_query(F.data.regexp(r"^cvto:[A-Z]{3}$"))
-async def on_conv_to(
-    callback: CallbackQuery, state: FSMContext, cache: TTLCache
-) -> None:
-    """Принимает валюту «в», считает результат и показывает его."""
+async def on_conv_to(callback: CallbackQuery, state: FSMContext) -> None:
+    """Принимает валюту «в» и просит сумму."""
     to_code = callback.data.split(":", 1)[1]
     data = await state.get_data()
-    amount: float | None = data.get("amount")
     from_code: str | None = data.get("from_code")
-    await state.clear()
-    if not amount or not from_code:
+    if not from_code:
         await callback.message.edit_text("Диалог устарел, начни заново.")
-        return
-    try:
-        from_rate = await _get_convert_rate(from_code, cache)
-        to_rate = await _get_convert_rate(to_code, cache)
-    except Exception:  # noqa: BLE001 — граница внешнего API, ошибка уже залогирована
-        await callback.message.edit_text(
-            "😔 Не удалось получить курсы. Попробуй позже.",
-            reply_markup=InlineKeyboardMarkup(
-                inline_keyboard=[
-                    [
-                        InlineKeyboardButton(
-                            text="💱 Ещё раз", callback_data="conv:start"
-                        )
-                    ]
-                ]
-            ),
-        )
         await callback.answer()
         return
+    await state.update_data(to_code=to_code)
+    await state.set_state(ConvertState.amount)
     await callback.message.edit_text(
-        format_convert(amount, from_code, to_code, from_rate, to_rate),
-        reply_markup=convert_kb(amount, from_code, to_code),
+        f"<b>{from_code} → {to_code}</b>. Введи сумму или выбери готовую:",
+        reply_markup=amount_kb(),
     )
     await callback.answer()
 
@@ -366,11 +389,11 @@ async def cmd_convert(message: Message, state: FSMContext, cache: TTLCache) -> N
     args = parse_convert_args(message.text.partition(" ")[2])
     if args is None:
         await state.clear()
-        await state.set_state(ConvertState.amount)
+        await state.set_state(ConvertState.from_code)
         await message.answer(
-            "💱 <b>Перевод валют</b>\n\nВведи сумму числом, например: 100 или 2500.50\n"
-            "Или одной командой: /convert 100 USD RUB\n"
-            "(/cancel чтобы выйти)"
+            "💱 <b>Конвертация</b>\n\nИз какого актива переводим?\n"
+            "Или одной командой: /convert 100 USD RUB",
+            reply_markup=currency_kb("cvfrom"),
         )
         return
     amount, from_code, to_code = args
