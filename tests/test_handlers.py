@@ -191,6 +191,14 @@ def test_format_crypto() -> None:
     assert "-1.84" in text
 
 
+def test_build_chart_png() -> None:
+    from src.handlers.crypto import build_chart_png
+
+    png = build_chart_png("BTC", [100.0, 105.0, 103.0, 110.0])
+    assert png[:8] == b"\x89PNG\r\n\x1a\n"  # сигнатура PNG
+    assert len(png) > 1000
+
+
 async def test_fetch_crypto_uses_alias(monkeypatch) -> None:
     """SOL запрашивает CoinGecko id solana (не sol)."""
 

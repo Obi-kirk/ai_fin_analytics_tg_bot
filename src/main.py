@@ -68,6 +68,7 @@ async def _setup_bot_commands(bot: Bot, admin_id: int | None) -> None:
         BotCommand(command="convert", description="Конвертер: /convert 100 USD RUB"),
         BotCommand(command="stock", description="Цена акции: /stock AAPL"),
         BotCommand(command="crypto", description="Цена крипты: /crypto BTC"),
+        BotCommand(command="chart", description="График цены: /chart BTC"),
         BotCommand(command="trending", description="Топ трендовых монет"),
         BotCommand(command="top", description="Топ по капитализации"),
         BotCommand(command="news", description="Новости по тикеру: /news AAPL"),

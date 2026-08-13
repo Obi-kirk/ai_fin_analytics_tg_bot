@@ -1,11 +1,17 @@
-"""Обработчик команды /crypto — цена криптовалюты (CoinGecko)."""
+"""Обработчик команд /crypto и /chart — криптовалюта (CoinGecko)."""
 
+import io
 import logging
 import re
 
+import matplotlib
+import matplotlib.pyplot as plt
+
+matplotlib.use("Agg")  # без GUI — только сохранение в файл
+
 from aiogram import Router
 from aiogram.filters import Command
-from aiogram.types import Message
+from aiogram.types import BufferedInputFile, Message
 
 from src.config.settings import get_settings
 from src.services.cache import TTLCache
@@ -86,6 +92,68 @@ async def fetch_trending() -> list[dict]:
         except Exception:
             log.exception("Не удалось получить тренды от CoinGecko")
             raise
+
+
+async def _fetch_price_history(coin_id: str) -> list[float]:
+    """История цен монеты за 30 дней (US-доллары)."""
+    async with make_session() as session:
+        gecko = CoinGeckoClient(get_settings().coingecko_api_key)
+        return await gecko.get_price_history(coin_id, session)
+
+
+def build_chart_png(symbol: str, prices: list[float]) -> bytes:
+    """PNG-график линии цены за период (matplotlib, Agg-backend)."""
+    if not prices:
+        raise ValueError("Нет данных для графика")
+    fig, ax = plt.subplots(figsize=(6, 3), dpi=110)
+    ax.plot(prices, color="#1f77b4", linewidth=1.6)
+    ax.set_title(f"{symbol} — 30 days", fontsize=12)
+    ax.set_xlabel("days")
+    ax.set_ylabel("USD")
+    ax.grid(True, alpha=0.3)
+    fig.tight_layout()
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png")
+    plt.close(fig)
+    buf.seek(0)
+    return buf.read()
+
+
+@router.message(Command("chart"))
+async def cmd_chart(message: Message, cache: TTLCache) -> None:
+    """Показывает график цены монеты за 30 дней, например: /chart BTC."""
+    args = message.text.split(maxsplit=1)
+    if len(args) < 2:
+        await message.answer("Укажи монету, например: /chart BTC или /chart ETH")
+        return
+    raw = args[1].strip().upper()
+    if not COIN_RE.match(raw):
+        await message.answer("Некорректное название монеты.")
+        return
+    gecko_id = COINS.get(raw, raw.lower())
+    settings = get_settings()
+    try:
+        history = await cache.get_or_set(
+            f"crypto:chart:{raw}",
+            lambda: _fetch_price_history(gecko_id),
+            settings.cache_ttl_fundamental_seconds,
+        )
+    except Exception:  # noqa: BLE001 — граница внешнего API, ошибка уже залогирована
+        await message.answer("😔 Не удалось получить историю цен. Попробуй позже.")
+        return
+    if len(history) < 2:
+        await message.answer("😔 Недостаточно данных для графика.")
+        return
+    try:
+        png = build_chart_png(raw, history)
+    except Exception:
+        log.exception("Ошибка построения графика %s", raw)
+        await message.answer("😔 Не удалось построить график.")
+        return
+    await message.answer_photo(
+        BufferedInputFile(png, filename=f"{raw}.png"),
+        caption=f"📊 <b>{raw}</b> — цена за 30 дней",
+    )
 
 
 def format_trending(coins: list[dict]) -> str:
