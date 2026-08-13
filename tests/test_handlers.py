@@ -11,6 +11,7 @@ from src.handlers.crypto import (
 )
 from src.handlers.rate import (
     CONVERT_CURRENCIES,
+    CONVERT_OPTIONS,
     _format_money,
     convert_amount,
     convert_kb,
@@ -107,7 +108,9 @@ class TestConvert:
         assert _format_money(8260) == "8,260"
         assert _format_money(8260.5) == "8,260"
         assert _format_money(118.64) == "118.64"
-        assert _format_money(0.5234) == "0.52"
+        assert _format_money(0.5234) == "0.5234"
+        assert _format_money(0.00156857) == "0.001569"
+        assert _format_money(0) == "0"
 
     def test_format_convert(self) -> None:
         text = format_convert(100, "USD", "RUB", 82.6145, 1.0)
@@ -123,6 +126,10 @@ class TestConvert:
     def test_convert_currencies_include_rub(self) -> None:
         assert "RUB" in CONVERT_CURRENCIES
         assert {"USD", "EUR", "GBP", "CNY", "JPY"} <= set(CONVERT_CURRENCIES)
+
+    def test_convert_options_include_crypto(self) -> None:
+        assert {"BTC", "ETH", "SOL", "XRP"} <= set(CONVERT_OPTIONS)
+        assert "RUB" in CONVERT_OPTIONS
 
     def test_convert_currencies_order(self) -> None:
         # порядок кнопок: RUB первым, дальше по популярности для пользователя

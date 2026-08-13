@@ -20,11 +20,13 @@ from aiogram.types import (
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from src.config.settings import get_settings
+from src.handlers.crypto import fetch_crypto
 from src.services.cache import TTLCache
 from src.services.financial_api import (
     CBR_CURRENCIES,
     CBRClient,
     FxQuote,
+    StockQuote,
     make_session,
 )
 
@@ -48,6 +50,12 @@ CONVERT_CURRENCIES = (
     "JPY",
 )
 
+# Криптовалюты в конвертере (курс через USD/CoinGecko)
+CONVERT_CRYPTO = ("BTC", "ETH", "SOL", "XRP")
+
+# Все доступные для конвертации активы (фиат + крипта)
+CONVERT_OPTIONS = CONVERT_CURRENCIES + CONVERT_CRYPTO
+
 # Готовые суммы на первом шаге диалога
 _AMOUNT_PRESETS = (100, 200, 500, 1000, 5000)
 
@@ -65,9 +73,9 @@ class ConvertState(StatesGroup):
 
 
 def currency_kb(prefix: str, exclude: str | None = None) -> InlineKeyboardMarkup:
-    """Кнопки выбора валюты (шаг «из»/«в») + кнопка «Отмена»."""
+    """Кнопки выбора актива (шаг «из»/«в») + кнопка «Отмена»."""
     builder = InlineKeyboardBuilder()
-    codes = [c for c in CONVERT_CURRENCIES if c != exclude]
+    codes = [c for c in CONVERT_OPTIONS if c != exclude]
     for i in range(0, len(codes), 3):
         builder.row(
             *[
@@ -157,8 +165,8 @@ async def on_convert_amount(
 async def on_conv_from(callback: CallbackQuery, state: FSMContext) -> None:
     """Принимает валюту «из» и спрашивает валюту «в»."""
     from_code = callback.data.split(":", 1)[1]
-    if not (from_code in CONVERT_CURRENCIES):
-        await callback.answer("Валюта не поддерживается.")
+    if from_code not in CONVERT_OPTIONS:
+        await callback.answer("Актив не поддерживается.")
         return
     await state.update_data(from_code=from_code)
     await state.set_state(ConvertState.to_code)
@@ -183,8 +191,8 @@ async def on_conv_to(
         await callback.message.edit_text("Диалог устарел, начни заново.")
         return
     try:
-        from_quote = await _get_fx(from_code, cache)
-        to_quote = await _get_fx(to_code, cache)
+        from_rate = await _get_convert_rate(from_code, cache)
+        to_rate = await _get_convert_rate(to_code, cache)
     except Exception:  # noqa: BLE001 — граница внешнего API, ошибка уже залогирована
         await callback.message.edit_text(
             "😔 Не удалось получить курсы. Попробуй позже.",
@@ -201,7 +209,7 @@ async def on_conv_to(
         await callback.answer()
         return
     await callback.message.edit_text(
-        format_convert(amount, from_code, to_code, from_quote.value, to_quote.value),
+        format_convert(amount, from_code, to_code, from_rate, to_rate),
         reply_markup=convert_kb(amount, from_code, to_code),
     )
     await callback.answer()
@@ -268,13 +276,41 @@ async def _get_fx(code: str, cache: TTLCache) -> FxQuote:
     )
 
 
+async def _get_crypto_quote(code: str, cache: TTLCache) -> StockQuote:
+    """Котировка криптовалюты с кэшем (USD)."""
+    settings = get_settings()
+    return await cache.get_or_set(
+        f"crypto:{code}",
+        lambda: fetch_crypto(code),
+        settings.cache_ttl_stock_seconds,
+    )
+
+
+async def _get_convert_rate(code: str, cache: TTLCache) -> float:
+    """Курс в рублях за 1 единицу актива.
+
+    Валюты ЦБ — напрямую (с учётом номинала), крипта — через цену в USD
+    и курс доллара ЦБ. Все активы конвертируются через общую базу — рубль.
+    """
+    if code in CONVERT_CRYPTO:
+        quote = await _get_crypto_quote(code, cache)
+        usd = await _get_fx("USD", cache)
+        return quote.price * usd.value / usd.nominal
+    quote = await _get_fx(code, cache)
+    return quote.value / quote.nominal
+
+
 def _format_money(value: float) -> str:
-    """Деньги: без нулей после запятой, иначе до 2 знаков."""
+    """Деньги: крупные — без копеек, обычные — до 2 знаков,
+    мелкие (крипта) — до 6 значащих.
+    """
+    if value == 0:
+        return "0"
     if abs(value) >= 1000:
         return f"{value:,.0f}"
-    if abs(value) >= 100:
+    if abs(value) >= 1:
         return f"{value:,.2f}".rstrip("0").rstrip(".")
-    return f"{value:,.2f}"
+    return f"{value:,.6f}".rstrip("0").rstrip(".")
 
 
 def format_convert(
@@ -284,7 +320,7 @@ def format_convert(
     result = convert_amount(amount, from_value, to_value)
     return (
         f"💱 <b>{_format_money(amount)} {from_code}</b> = "
-        f"<b>{_format_money(result)} {to_code}</b>\n\nИсточник: ЦБ РФ"
+        f"<b>{_format_money(result)} {to_code}</b>\n\nИсточник: ЦБ РФ, CoinGecko"
     )
 
 
@@ -312,13 +348,13 @@ async def on_conv_swap(callback: CallbackQuery, cache: TTLCache) -> None:
     _, raw_amount, from_code, to_code = callback.data.split("|")
     amount = float(raw_amount)
     try:
-        from_quote = await _get_fx(from_code, cache)
-        to_quote = await _get_fx(to_code, cache)
+        from_rate = await _get_convert_rate(from_code, cache)
+        to_rate = await _get_convert_rate(to_code, cache)
     except Exception:  # noqa: BLE001 — граница внешнего API, ошибка уже залогирована
         await callback.answer("😔 Не удалось получить курсы. Попробуй позже.")
         return
     await callback.message.edit_text(
-        format_convert(amount, from_code, to_code, from_quote.value, to_quote.value),
+        format_convert(amount, from_code, to_code, from_rate, to_rate),
         reply_markup=convert_kb(amount, from_code, to_code),
     )
     await callback.answer()
@@ -338,18 +374,16 @@ async def cmd_convert(message: Message, state: FSMContext, cache: TTLCache) -> N
         )
         return
     amount, from_code, to_code = args
-    if from_code not in CONVERT_CURRENCIES or to_code not in CONVERT_CURRENCIES:
-        await message.answer(f"Доступны: {', '.join(sorted(CONVERT_CURRENCIES))}")
+    if from_code not in CONVERT_OPTIONS or to_code not in CONVERT_OPTIONS:
+        await message.answer(f"Доступны: {', '.join(sorted(CONVERT_OPTIONS))}")
         return
     try:
-        from_quote = await _get_fx(from_code, cache)
-        to_quote = await _get_fx(to_code, cache)
+        from_rate = await _get_convert_rate(from_code, cache)
+        to_rate = await _get_convert_rate(to_code, cache)
     except Exception:  # noqa: BLE001 — граница внешнего API, ошибка уже залогирована
-        await message.answer("😔 Не удалось получить курс от ЦБ РФ. Попробуй позже.")
+        await message.answer("😔 Не удалось получить курсы. Попробуй позже.")
         return
-    await message.answer(
-        format_convert(amount, from_code, to_code, from_quote.value, to_quote.value)
-    )
+    await message.answer(format_convert(amount, from_code, to_code, from_rate, to_rate))
 
 
 @router.message(Command("rate"))
