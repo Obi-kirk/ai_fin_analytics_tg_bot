@@ -155,6 +155,10 @@ def refresh_kb(cache_key: str) -> InlineKeyboardMarkup:
         row1.append(
             InlineKeyboardButton(text="📰 Новости", callback_data=f"news:{symbol}")
         )
+    elif kind == "crypto":
+        row1.append(
+            InlineKeyboardButton(text="📊 График", callback_data=f"chart:{symbol}")
+        )
     builder.row(*row1)
     builder.row(
         InlineKeyboardButton(text="➕ В портфель", callback_data=f"pf:add:{symbol}"),

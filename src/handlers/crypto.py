@@ -9,9 +9,9 @@ import matplotlib.pyplot as plt
 
 matplotlib.use("Agg")  # без GUI — только сохранение в файл
 
-from aiogram import Router
+from aiogram import F, Router
 from aiogram.filters import Command
-from aiogram.types import BufferedInputFile, Message
+from aiogram.types import BufferedInputFile, CallbackQuery, Message
 
 from src.config.settings import get_settings
 from src.services.cache import TTLCache
@@ -119,22 +119,16 @@ def build_chart_png(symbol: str, prices: list[float]) -> bytes:
     return buf.read()
 
 
-@router.message(Command("chart"))
-async def cmd_chart(message: Message, cache: TTLCache) -> None:
-    """Показывает график цены монеты за 30 дней, например: /chart BTC."""
-    args = message.text.split(maxsplit=1)
-    if len(args) < 2:
-        await message.answer("Укажи монету, например: /chart BTC или /chart ETH")
-        return
-    raw = args[1].strip().upper()
-    if not COIN_RE.match(raw):
+async def _send_chart(message: Message, symbol: str, cache: TTLCache) -> None:
+    """Генерирует и отправляет график цены монеты за 30 дней."""
+    if not COIN_RE.match(symbol):
         await message.answer("Некорректное название монеты.")
         return
-    gecko_id = COINS.get(raw, raw.lower())
+    gecko_id = COINS.get(symbol, symbol.lower())
     settings = get_settings()
     try:
         history = await cache.get_or_set(
-            f"crypto:chart:{raw}",
+            f"crypto:chart:{symbol}",
             lambda: _fetch_price_history(gecko_id),
             settings.cache_ttl_fundamental_seconds,
         )
@@ -145,15 +139,33 @@ async def cmd_chart(message: Message, cache: TTLCache) -> None:
         await message.answer("😔 Недостаточно данных для графика.")
         return
     try:
-        png = build_chart_png(raw, history)
+        png = build_chart_png(symbol, history)
     except Exception:
-        log.exception("Ошибка построения графика %s", raw)
+        log.exception("Ошибка построения графика %s", symbol)
         await message.answer("😔 Не удалось построить график.")
         return
     await message.answer_photo(
-        BufferedInputFile(png, filename=f"{raw}.png"),
-        caption=f"📊 <b>{raw}</b> — цена за 30 дней",
+        BufferedInputFile(png, filename=f"{symbol}.png"),
+        caption=f"📊 <b>{symbol}</b> — цена за 30 дней",
     )
+
+
+@router.message(Command("chart"))
+async def cmd_chart(message: Message, cache: TTLCache) -> None:
+    """Показывает график цены монеты за 30 дней, например: /chart BTC."""
+    args = message.text.split(maxsplit=1)
+    if len(args) < 2:
+        await message.answer("Укажи монету, например: /chart BTC или /chart ETH")
+        return
+    await _send_chart(message, args[1].strip().upper(), cache)
+
+
+@router.callback_query(F.data.regexp(r"^chart:[A-Z0-9]+$"))
+async def on_chart_callback(callback: CallbackQuery, cache: TTLCache) -> None:
+    """Отправляет график монеты из кнопки под карточкой."""
+    symbol = callback.data.split(":", 1)[1]
+    await callback.answer()
+    await _send_chart(callback.message, symbol, cache)
 
 
 def format_trending(coins: list[dict]) -> str:
