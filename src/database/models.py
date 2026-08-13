@@ -1,8 +1,16 @@
-"""Модели БД: пользователи, история запросов, портфель, алерты."""
+"""Модели БД: пользователи, история запросов, портфель, алерты, дайджест."""
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
-from sqlalchemy import BigInteger, Boolean, DateTime, Float, Integer, String
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    Date,
+    DateTime,
+    Float,
+    Integer,
+    String,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.database.db import Base
@@ -78,6 +86,22 @@ class QueryLog(Base):
     event_type: Mapped[str] = mapped_column(String(16))  # "message" | "callback"
     command: Mapped[str | None] = mapped_column(String(64), nullable=True)
     payload: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, server_default="now()"
+    )
+
+
+class DigestSubscription(Base):
+    """Подписка на ежедневный дайджест.
+
+    last_sent — дата последней отправки (для пропуска повторной рассылки
+    в один день и корректного восстановления после рестарта).
+    """
+
+    __tablename__ = "digest_subscriptions"
+
+    telegram_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    last_sent: Mapped[date | None] = mapped_column(Date, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, server_default="now()"
     )

@@ -39,6 +39,11 @@ class Settings(BaseSettings):
     # Алерты цен: интервал проверки (30 минут по умолчанию)
     alert_interval_seconds: int = 1800
 
+    # Дневной дайджест: время отправки (локальное время сервера)
+    digest_hour: int = 9
+    digest_minute: int = 0
+    digest_check_seconds: int = 60
+
     # AI-агент
     openrouter_model: str = "nvidia/nemotron-3-nano-30b-a3b:free"
     openrouter_max_tokens: int = 1200

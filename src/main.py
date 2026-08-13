@@ -19,6 +19,7 @@ from src.database.db import close_db, create_tables
 from src.handlers.admin import router as admin_router
 from src.handlers.analyze import router as analyze_router
 from src.handlers.crypto import router as crypto_router
+from src.handlers.digest import router as digest_router
 from src.handlers.errors import router as errors_router
 from src.handlers.help import router as help_router
 from src.handlers.menu import router as menu_router
@@ -31,6 +32,7 @@ from src.middleware.throttling import ThrottlingMiddleware
 from src.middleware.users import BotStats, UsersMiddleware
 from src.services.alerts import run_alert_loop
 from src.services.cache import TTLCache
+from src.services.digest import run_digest_loop
 from src.utils.redact import RedactFormatter
 
 log = logging.getLogger(__name__)
@@ -73,6 +75,7 @@ async def _setup_bot_commands(bot: Bot, admin_id: int | None) -> None:
         BotCommand(command="portfolio", description="Мой портфель"),
         BotCommand(command="alert", description="Алерт: /alert BTC 70000"),
         BotCommand(command="alerts", description="Мои алерты"),
+        BotCommand(command="digest", description="Дневной дайджест"),
         BotCommand(command="myrole", description="Моя роль"),
         BotCommand(command="help", description="Справка"),
     ]
@@ -129,6 +132,7 @@ async def main() -> None:
     dp.include_router(menu_router)
     dp.include_router(rate_router)
     dp.include_router(portfolio_router)
+    dp.include_router(digest_router)
     dp.include_router(stock_router)
     dp.include_router(crypto_router)
     dp.include_router(analyze_router)
@@ -140,10 +144,14 @@ async def main() -> None:
     alert_task = asyncio.create_task(
         run_alert_loop(bot, settings.alert_interval_seconds)
     )
+    digest_task = asyncio.create_task(
+        run_digest_loop(bot, cache, settings.digest_check_seconds)
+    )
     try:
         await dp.start_polling(bot)
     finally:
         alert_task.cancel()
+        digest_task.cancel()
         await cache.stop_gc()
         await bot.session.close()
         await close_db()
