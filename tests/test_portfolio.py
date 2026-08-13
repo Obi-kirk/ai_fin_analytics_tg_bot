@@ -166,7 +166,7 @@ class TestAlertLine:
             direction="above",
         )
         text = _alert_line(alert)
-        assert "<code>1</code>" in text and "BTC" in text and "выше" in text
+        assert "BTC" in text and "выше" in text and "$70,000.00" in text
 
     def test_below(self) -> None:
         from src.database.models import Alert

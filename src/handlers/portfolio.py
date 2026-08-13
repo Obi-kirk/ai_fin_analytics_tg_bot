@@ -637,13 +637,9 @@ async def cmd_alerts(message: Message) -> None:
         await message.answer("🔕 Активных алертов нет.\nСоздать: /alert BTC 70000")
         return
     lines = ["🔔 <b>Мои алерты</b>\n"]
-    for a in alerts:
-        arrow = "выше" if a.direction == "above" else "ниже"
-        lines.append(
-            f"• <code>{a.id}</code>. {TYPE_ICONS.get(a.asset_type, '')}"
-            f"<b>{a.symbol}</b> {arrow} ${a.target_price:,.2f}"
-        )
-    lines.append("\nУбрать: /remove_alert <id>")
+    for num, a in enumerate(alerts, 1):
+        lines.append(f"• <code>{num}</code>. {_alert_line(a)}")
+    lines.append("\nУбрать: /portfolio → 🔔 Алерты")
     await message.answer("\n".join(lines))
 
 
@@ -651,10 +647,10 @@ async def cmd_alerts(message: Message) -> None:
 
 
 def _alert_line(a: Alert) -> str:
-    """Однострочное описание алерта."""
+    """Однострочное описание алерта (без номера — нумерация в списке)."""
     arrow = "выше" if a.direction == "above" else "ниже"
     return (
-        f"• <code>{a.id}</code>. {TYPE_ICONS.get(a.asset_type, '')}"
+        f"{TYPE_ICONS.get(a.asset_type, '')}"
         f"<b>{a.symbol}</b> {arrow} ${a.target_price:,.2f}"
     )
 
@@ -690,11 +686,11 @@ async def _alerts_text_kb(telegram_id: int) -> tuple[str, InlineKeyboardMarkup]:
         )
     lines = ["🔔 <b>Мои алерты</b>\n"]
     builder = InlineKeyboardBuilder()
-    for a in alerts:
-        lines.append(_alert_line(a))
+    for num, a in enumerate(alerts, 1):
+        lines.append(f"• <code>{num}</code>. {_alert_line(a)}")
         builder.row(
             InlineKeyboardButton(
-                text=f"🗑 Убрать #{a.id}", callback_data=f"pf:alert_del:{a.id}"
+                text=f"🗑 Убрать #{num}", callback_data=f"pf:alert_del:{a.id}"
             )
         )
     builder.row(InlineKeyboardButton(text="↩️ Портфель", callback_data="pf:menu"))
