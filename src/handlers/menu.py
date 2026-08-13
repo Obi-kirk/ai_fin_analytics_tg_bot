@@ -66,7 +66,22 @@ STOCKS_TOP10 = (
 )
 INDEXES = ("SPX", "DJI", "VIX")
 CRYPTO_TOP10 = ("BTC", "ETH", "SOL", "XRP", "DOGE", "ADA", "LTC", "BNB", "AVAX", "DOT")
-ANALYSE_SHORT = ("AAPL", "TSLA", "NVDA", "BTC")
+ANALYSE_SHORT = (
+    "AAPL",
+    "TSLA",
+    "NVDA",
+    "MSFT",
+    "GOOGL",
+    "AMZN",
+    "META",
+    "AMD",
+    "SPX",
+    "DJI",
+    "BTC",
+    "ETH",
+    "SOL",
+    "XRP",
+)
 
 MENU_TITLES = {
     "fx": "💱 Выбери валюту",
@@ -110,12 +125,13 @@ def submenu_kb(kind: str) -> InlineKeyboardMarkup:
                 ]
             )
     elif kind == "analyse":
-        builder.row(
-            *[
-                InlineKeyboardButton(text=n, callback_data=f"analyse:{n}")
-                for n in ANALYSE_SHORT
-            ]
-        )
+        for i in range(0, len(ANALYSE_SHORT), 2):
+            builder.row(
+                *[
+                    InlineKeyboardButton(text=n, callback_data=f"analyse:{n}")
+                    for n in ANALYSE_SHORT[i : i + 2]
+                ]
+            )
     else:
         raise ValueError(f"Неизвестное подменю: {kind}")
     return builder.as_markup()

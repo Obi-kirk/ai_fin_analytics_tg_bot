@@ -16,7 +16,7 @@ from aiogram.types import CallbackQuery, Message
 
 from src.config.settings import get_settings
 from src.handlers.crypto import COIN_RE, fetch_crypto
-from src.handlers.stock import TICKER_RE, fetch_stock
+from src.handlers.stock import TICKER_RE, fetch_stock, resolve_stock_symbol
 from src.services.cache import TTLCache
 from src.services.financial_api import (
     CoinGeckoClient,
@@ -34,11 +34,20 @@ router = Router()
 
 # Символы подменю AI-анализа (из menu.py) и их формат
 ANALYSE_TYPES = {
-    "BTC": "crypto",
-    "ETH": "crypto",
     "AAPL": "stock",
     "TSLA": "stock",
     "NVDA": "stock",
+    "MSFT": "stock",
+    "GOOGL": "stock",
+    "AMZN": "stock",
+    "META": "stock",
+    "AMD": "stock",
+    "SPX": "stock",
+    "DJI": "stock",
+    "BTC": "crypto",
+    "ETH": "crypto",
+    "SOL": "crypto",
+    "XRP": "crypto",
 }
 
 QUERY_RE = re.compile(r"^[\w\s.,!?()%$€¥£+-]{1,500}$")
@@ -115,16 +124,19 @@ def _clean_text(text: str, limit: int) -> str:
 
 
 async def _stock_context(symbol: str, cache: TTLCache) -> str:
-    """Контекст акции: котировка + профиль компании + свежие новости.
+    """Контекст акции/индекса: котировка + профиль компании + свежие новости.
 
+    Для индексов (SPX/DJI/VIX) Finnhub не отдаёт ^-тикеры — используются
+    ETF-аналоги через resolve_stock_symbol (SPX→SPY и т.д.).
     Дополнительные данные не роняют анализ: при сбое остаётся котировка.
     """
     settings = get_settings()
-    quote = await fetch_stock(symbol)
+    resolved = resolve_stock_symbol(symbol)
+    quote = await fetch_stock(resolved)
     sign = "+" if quote.change_percent >= 0 else ""
     lines = [
         "Тип: акция/индекс",
-        f"Символ: {quote.symbol}",
+        f"Символ: {symbol}",
         f"Цена: {quote.price:.4f}",
         f"Изменение за день: {sign}{quote.change_percent:.2f}%",
     ]
@@ -133,13 +145,13 @@ async def _stock_context(symbol: str, cache: TTLCache) -> str:
     news: list[dict] = []
     try:
         profile = await cache.get_or_set(
-            f"stock:profile:{symbol}",
-            lambda: _fetch_company_profile(symbol),
+            f"stock:profile:{resolved}",
+            lambda: _fetch_company_profile(resolved),
             settings.cache_ttl_fundamental_seconds,
         )
         news = await cache.get_or_set(
-            f"stock:news:{symbol}",
-            lambda: _fetch_news(symbol),
+            f"stock:news:{resolved}",
+            lambda: _fetch_news(resolved),
             settings.cache_ttl_fundamental_seconds,
         )
     except Exception:  # noqa: BLE001 — доп. данные не критичны
