@@ -86,16 +86,28 @@ class TestPortfolioKb:
         assert "📈 Акции (5)" in texts
         assert "🪙 Крипта (3)" in texts
 
-    def test_menu_callbacks(self) -> None:
-        kb = _pf_menu_kb({"fx": 0, "stock": 0, "crypto": 0})
+    def test_menu_hides_empty_categories(self) -> None:
+        kb = _pf_menu_kb({"fx": 0, "stock": 5, "crypto": 0})
+        texts = [b.text for row in kb.inline_keyboard for b in row]
+        assert "📈 Акции (5)" in texts
+        assert "Валюты" not in texts and "Крипта" not in texts
+
+    def test_menu_callbacks_nonempty(self) -> None:
+        kb = _pf_menu_kb({"fx": 2, "stock": 5, "crypto": 3})
         data = [b.callback_data for row in kb.inline_keyboard for b in row]
         assert data == [
             "pf:cat:fx",
             "pf:cat:stock",
             "pf:cat:crypto",
+            "pf:add_menu",
             "pf:remove",
             "pf:alerts",
         ]
+
+    def test_menu_empty_portfolio(self) -> None:
+        kb = _pf_menu_kb({"fx": 0, "stock": 0, "crypto": 0})
+        data = [b.callback_data for row in kb.inline_keyboard for b in row]
+        assert data == ["pf:add_menu", "pf:alerts"]
 
     def test_mark_added_replaces_button(self) -> None:
         markup = InlineKeyboardMarkup(

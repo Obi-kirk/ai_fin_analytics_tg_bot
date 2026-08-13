@@ -68,6 +68,12 @@ class AlertState(StatesGroup):
     direction = State()
 
 
+class AddState(StatesGroup):
+    """FSM добавления произвольного актива в портфель: ввод символа."""
+
+    symbol = State()
+
+
 def resolve_asset_type(symbol: str) -> str | None:
     """Определяет тип актива: fx | stock | crypto (по символу)."""
     if symbol in CBR_CURRENCIES:
@@ -124,32 +130,42 @@ async def _pf_counts(telegram_id: int) -> dict[str, int]:
 
 
 def _pf_menu_kb(counts: dict[str, int]) -> InlineKeyboardMarkup:
-    """Главная клавиатура портфеля: категории с количеством активов."""
+    """Главная клавиатура портфеля: только непустые категории + действия."""
     builder = InlineKeyboardBuilder()
-    builder.row(
+    cat_rows = [
         InlineKeyboardButton(
-            text=f"💱 Валюты ({counts['fx']})", callback_data="pf:cat:fx"
-        ),
-        InlineKeyboardButton(
-            text=f"📈 Акции ({counts['stock']})", callback_data="pf:cat:stock"
-        ),
-        InlineKeyboardButton(
-            text=f"🪙 Крипта ({counts['crypto']})", callback_data="pf:cat:crypto"
-        ),
-    )
-    builder.row(
-        InlineKeyboardButton(text="➖ Удалить актив", callback_data="pf:remove"),
-        InlineKeyboardButton(text="🔔 Алерты", callback_data="pf:alerts"),
-    )
+            text=f"{TYPE_ICONS[t]} {TYPE_TITLES[t]} ({counts[t]})",
+            callback_data=f"pf:cat:{t}",
+        )
+        for t in ("fx", "stock", "crypto")
+        if counts[t] > 0
+    ]
+    if cat_rows:
+        builder.row(*cat_rows)
+    add_btn = InlineKeyboardButton(text="➕ Добавить", callback_data="pf:add_menu")
+    if cat_rows:
+        builder.row(
+            add_btn,
+            InlineKeyboardButton(text="➖ Удалить", callback_data="pf:remove"),
+        )
+        builder.row(InlineKeyboardButton(text="🔔 Алерты", callback_data="pf:alerts"))
+    else:
+        builder.row(add_btn)
+        builder.row(InlineKeyboardButton(text="🔔 Алерты", callback_data="pf:alerts"))
     return builder.as_markup()
 
 
 async def _render_pf_menu(telegram_id: int) -> tuple[str, InlineKeyboardMarkup]:
     """Текст и клавиатура главного меню портфеля."""
     counts = await _pf_counts(telegram_id)
-    text = "📁 <b>Мой портфель</b>\n\nВыбери категорию или действие.\n"
-    text += "Активы добавляются в меню «📈 Акции» / «🪙 Крипта» / «💱 Курсы» — "
-    text += "у цены актива нажми «➕ В портфель»."
+    if sum(counts.values()) == 0:
+        text = (
+            "📁 <b>Мой портфель</b>\n\nПортфель пуст.\n"
+            "Добавь актив: нажми «➕ Добавить» или в меню «📈 Акции» / "
+            "«🪙 Крипта» / «💱 Курсы» у цены актива — «➕ В портфель»."
+        )
+    else:
+        text = "📁 <b>Мой портфель</b>\n\nВыбери категорию или действие."
     return text, _pf_menu_kb(counts)
 
 
@@ -296,15 +312,16 @@ async def on_pf_menu(callback: CallbackQuery) -> None:
     await callback.answer()
 
 
-@router.callback_query(F.data.regexp(r"^pf:cat:(fx|stock|crypto)$"))
-async def on_pf_cat(callback: CallbackQuery, cache: TTLCache) -> None:
+async def _render_cat(
+    callback: CallbackQuery, cache: TTLCache, asset_type: str
+) -> None:
     """Список активов категории с живыми ценами."""
-    asset_type = callback.data.split(":", 2)[2]
     items = await _list_items(callback.from_user.id, asset_type)
     if not items:
         await callback.message.edit_text(
             f"{TYPE_ICONS[asset_type]} <b>{TYPE_TITLES[asset_type]}</b>: пусто.\n"
-            "Добавить: открой цену актива в меню и нажми «➕ В портфель».",
+            "Добавить: нажми «➕ Добавить» или открой цену актива в меню "
+            "и нажми «➕ В портфель».",
             reply_markup=InlineKeyboardMarkup(
                 inline_keyboard=[
                     [InlineKeyboardButton(text="↩️ Портфель", callback_data="pf:menu")]
@@ -332,9 +349,30 @@ async def on_pf_cat(callback: CallbackQuery, cache: TTLCache) -> None:
                 callback_data=f"pf:view:{asset_type}:{item.symbol}",
             )
         )
-    builder.row(InlineKeyboardButton(text="↩️ Портфель", callback_data="pf:menu"))
+    builder.row(
+        InlineKeyboardButton(
+            text="🔄 Обновить всё", callback_data=f"pf:cat_refresh:{asset_type}"
+        ),
+        InlineKeyboardButton(text="↩️ Портфель", callback_data="pf:menu"),
+    )
     await callback.message.edit_text("\n".join(lines), reply_markup=builder.as_markup())
     await callback.answer()
+
+
+@router.callback_query(F.data.regexp(r"^pf:cat:(fx|stock|crypto)$"))
+async def on_pf_cat(callback: CallbackQuery, cache: TTLCache) -> None:
+    """Список активов категории с живыми ценами."""
+    asset_type = callback.data.split(":", 2)[2]
+    await _render_cat(callback, cache, asset_type)
+
+
+@router.callback_query(F.data.regexp(r"^pf:cat_refresh:(fx|stock|crypto)$"))
+async def on_pf_cat_refresh(callback: CallbackQuery, cache: TTLCache) -> None:
+    """Сбрасывает кэш всех активов категории и пересобирает список."""
+    asset_type = callback.data.split(":", 2)[2]
+    for item in await _list_items(callback.from_user.id, asset_type):
+        await cache.delete(_cache_key(asset_type, item.symbol))
+    await _render_cat(callback, cache, asset_type)
 
 
 @router.callback_query(F.data.regexp(r"^pf:view:(fx|stock|crypto):[A-Z0-9.\-]+$"))
@@ -420,6 +458,77 @@ async def on_pf_add(callback: CallbackQuery) -> None:
     await callback.answer(
         f"✅ {symbol} добавлен в портфель" if added else f"{symbol} уже в портфеле"
     )
+
+
+# ---------------------------------------------------------- inline: FSM добавления
+
+
+@router.callback_query(F.data == "pf:add_menu")
+async def on_pf_add_menu(callback: CallbackQuery, state: FSMContext) -> None:
+    """Начинает FSM добавления произвольного актива."""
+    await state.set_state(AddState.symbol)
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="↩️ Отмена", callback_data="pf:add_cancel"))
+    await callback.message.edit_text(
+        "➕ Введи символ актива (например <b>BTC</b>, <b>AAPL</b>, "
+        "<b>USD</b>, <b>SPX</b>). /cancel — выйти.",
+        reply_markup=builder.as_markup(),
+    )
+    await callback.answer()
+
+
+@router.message(AddState.symbol)
+async def on_add_symbol(message: Message, state: FSMContext) -> None:
+    """Принимает символ и добавляет актив в портфель."""
+    symbol = (message.text or "").strip().upper().split(" ", 1)[0]
+    asset_type = resolve_asset_type(symbol)
+    if asset_type is None:
+        await message.answer(
+            "Не распознал актив. Введи тикер акции (AAPL), монету (BTC) "
+            "или валюту (USD)."
+        )
+        return
+    async for session in get_session():
+        exists = (
+            await session.execute(
+                select(PortfolioItem).where(
+                    PortfolioItem.telegram_id == message.from_user.id,
+                    PortfolioItem.symbol == symbol,
+                )
+            )
+        ).scalar()
+        if exists is None:
+            session.add(
+                PortfolioItem(
+                    telegram_id=message.from_user.id,
+                    asset_type=asset_type,
+                    symbol=symbol,
+                )
+            )
+            await session.commit()
+            added = True
+        else:
+            added = False
+    await state.clear()
+    _, kb = await _render_pf_menu(message.from_user.id)
+    await message.answer(
+        (
+            f"✅ {TYPE_ICONS[asset_type]} <b>{symbol}</b> добавлен в портфель "
+            f"({TYPE_TITLES[asset_type]})."
+            if added
+            else f"{TYPE_ICONS[asset_type]} <b>{symbol}</b> уже в портфеле."
+        ),
+        reply_markup=kb,
+    )
+
+
+@router.callback_query(F.data == "pf:add_cancel")
+async def on_pf_add_cancel(callback: CallbackQuery, state: FSMContext) -> None:
+    """Отменяет FSM добавления актива."""
+    await state.clear()
+    text, kb = await _render_pf_menu(callback.from_user.id)
+    await callback.message.edit_text(f"Отменено.\n\n{text}", reply_markup=kb)
+    await callback.answer()
 
 
 # ---------------------------------------------------------- inline: удаление
