@@ -124,25 +124,36 @@ async def build_digest(telegram_id: int, cache: TTLCache) -> str:
     """
     lines = ["🌅 <b>Доброе утро! Дневной дайджест</b>\n"]
     user_assets = await _user_assets(telegram_id)
+    sections: list[list[str]] = []
     if user_assets:
         if user_assets.get("fx"):
-            lines += await _section("💱 <b>Валюты</b>", user_assets["fx"], "fx", cache)
+            sections.append(
+                await _section("💱 <b>Валюты</b>", user_assets["fx"], "fx", cache)
+            )
         if user_assets.get("stock"):
-            lines += await _section(
-                "📈 <b>Акции</b>", user_assets["stock"], "stock", cache
+            sections.append(
+                await _section("📈 <b>Акции</b>", user_assets["stock"], "stock", cache)
             )
         if user_assets.get("crypto"):
-            lines += await _section(
-                "🪙 <b>Крипта</b>", user_assets["crypto"], "crypto", cache
+            sections.append(
+                await _section(
+                    "🪙 <b>Крипта</b>", user_assets["crypto"], "crypto", cache
+                )
             )
     else:
-        lines += await _section("💱 <b>Курсы ЦБ</b>", list(DIGEST_FX), "fx", cache)
-        lines.append("")
-        lines += await _section("📈 <b>Акции</b>", list(DIGEST_STOCKS), "stock", cache)
-        lines.append("")
-        lines += await _section(
-            "🪙 <b>Крипта</b>", list(DIGEST_CRYPTO), "crypto", cache
+        sections.append(
+            await _section("💱 <b>Курсы ЦБ</b>", list(DIGEST_FX), "fx", cache)
         )
+        sections.append(
+            await _section("📈 <b>Акции</b>", list(DIGEST_STOCKS), "stock", cache)
+        )
+        sections.append(
+            await _section("🪙 <b>Крипта</b>", list(DIGEST_CRYPTO), "crypto", cache)
+        )
+    for i, section in enumerate(sections):
+        if i:
+            lines.append("")
+        lines.extend(section)
 
     async for session in get_session():
         items = (
