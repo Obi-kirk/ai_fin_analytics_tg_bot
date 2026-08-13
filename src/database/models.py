@@ -40,7 +40,12 @@ class User(Base):
 
 
 class PortfolioItem(Base):
-    """Актив из портфеля (watchlist) пользователя: валюты, акции, крипта."""
+    """Актив из портфеля (watchlist) пользователя: валюты, акции, крипта.
+
+    quantity — количество у пользователя (для баланса). Чувствительная
+    персональная информация: хранится только в БД, не логируется и не
+    передаётся в LLM/внешние сервисы (AGENTS.md п.9).
+    """
 
     __tablename__ = "portfolio_items"
 
@@ -48,6 +53,7 @@ class PortfolioItem(Base):
     telegram_id: Mapped[int] = mapped_column(BigInteger, index=True)
     asset_type: Mapped[str] = mapped_column(String(8))  # fx | stock | crypto
     symbol: Mapped[str] = mapped_column(String(16))
+    quantity: Mapped[float | None] = mapped_column(Float, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, server_default="now()"
     )

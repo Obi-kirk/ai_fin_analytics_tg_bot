@@ -38,7 +38,7 @@ from aiogram.types import (
     Message,
 )
 from aiogram.utils.keyboard import InlineKeyboardBuilder
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 
 from src.config.settings import get_settings
 from src.database.db import get_session
@@ -69,9 +69,21 @@ class AlertState(StatesGroup):
 
 
 class AddState(StatesGroup):
-    """FSM добавления произвольного актива в портфель: ввод символа."""
+    """FSM добавления произвольного актива в портфель: символ -> количество."""
 
     symbol = State()
+    quantity = State()
+
+
+class QtyState(StatesGroup):
+    """FSM изменения количества актива в портфеле."""
+
+    quantity = State()
+
+
+def _fmt_qty(q: float) -> str:
+    """Форматирует количество без лишних нулей (5.0 -> 5, 0.5 -> 0.5)."""
+    return f"{q:g}"
 
 
 def resolve_asset_type(symbol: str) -> str | None:
@@ -200,25 +212,52 @@ async def _fetch_quote(asset_type: str, symbol: str, cache: TTLCache) -> object:
     raise ValueError(f"Неизвестный тип актива: {asset_type}")
 
 
-def _short_line(asset_type: str, quote: object) -> str:
+def _short_line(
+    asset_type: str, symbol: str, quote: object, quantity: float | None = None
+) -> str:
     """Однострочное описание котировки для списка категории."""
     if asset_type == "fx":
-        return f"{quote.code} — {quote.value:.2f} ₽"
-    sign = "+" if quote.change_percent >= 0 else ""
-    return f"{quote.symbol} — ${quote.price:,.2f} ({sign}{quote.change_percent:.2f}%)"
+        base = f"{quote.code} — {quote.value:.2f} ₽"
+    else:
+        sign = "+" if quote.change_percent >= 0 else ""
+        base = f"{symbol} — ${quote.price:,.2f} ({sign}{quote.change_percent:.2f}%)"
+    if quantity is not None:
+        base += f" ×{_fmt_qty(quantity)}"
+    return base
 
 
-def _quote_text(asset_type: str, symbol: str, quote: object) -> str:
+def _per_unit(asset_type: str, quote: object) -> float:
+    """Цена за единицу актива (для fx — с учётом номинала ЦБ)."""
+    if asset_type == "fx":
+        return quote.value / quote.nominal
+    return quote.price
+
+
+def _quote_text(
+    asset_type: str,
+    symbol: str,
+    quote: object,
+    quantity: float | None = None,
+) -> str:
     """Полный текст карточки актива (как в основном меню)."""
     if asset_type == "fx":
-        return format_fx(quote)
-    if asset_type == "stock":
-        return format_stock(quote, display=symbol)
-    return format_crypto(symbol, quote)
+        text = format_fx(quote)
+    elif asset_type == "stock":
+        text = format_stock(quote, display=symbol)
+    else:
+        text = format_crypto(symbol, quote)
+    if quantity is not None:
+        currency = "₽" if asset_type == "fx" else "$"
+        value = _per_unit(asset_type, quote) * quantity
+        text += (
+            f"\n\nКоличество: {_fmt_qty(quantity)} • "
+            f"Стоимость: <b>{value:,.2f} {currency}</b>"
+        )
+    return text
 
 
 def _pf_quote_kb(asset_type: str, symbol: str) -> InlineKeyboardMarkup:
-    """Клавиатура карточки из портфеля: обновить/новости/алерт/убрать."""
+    """Клавиатура карточки из портфеля: обновить/новости/алерт/кол-во/убрать."""
     builder = InlineKeyboardBuilder()
     row1 = [
         InlineKeyboardButton(
@@ -232,12 +271,27 @@ def _pf_quote_kb(asset_type: str, symbol: str) -> InlineKeyboardMarkup:
     builder.row(*row1)
     builder.row(
         InlineKeyboardButton(text="🔔 Алерт", callback_data=f"pf:alert:{symbol}"),
+        InlineKeyboardButton(text="✏️ Кол-во", callback_data=f"pf:qty:{symbol}"),
         InlineKeyboardButton(
             text="➖ Убрать", callback_data=f"pf:del:{asset_type}:{symbol}"
         ),
     )
     builder.row(InlineKeyboardButton(text="↩️ Портфель", callback_data="pf:menu"))
     return builder.as_markup()
+
+
+async def _get_quantity(telegram_id: int, symbol: str) -> float | None:
+    """Количество актива в портфеле пользователя (None — не задано)."""
+    async for session in get_session():
+        quantity = (
+            await session.execute(
+                select(PortfolioItem.quantity).where(
+                    PortfolioItem.telegram_id == telegram_id,
+                    PortfolioItem.symbol == symbol,
+                )
+            )
+        ).scalar_one_or_none()
+    return quantity
 
 
 def _cache_key(asset_type: str, symbol: str) -> str:
@@ -267,8 +321,9 @@ async def _quote_and_edit_pf(
             "😔 Не удалось получить данные. Попробуй позже.", show_alert=True
         )
         return
+    quantity = await _get_quantity(callback.from_user.id, symbol)
     await callback.message.edit_text(
-        _quote_text(asset_type, symbol, quote),
+        _quote_text(asset_type, symbol, quote, quantity),
         reply_markup=_pf_quote_kb(asset_type, symbol),
         disable_web_page_preview=True,
     )
@@ -342,7 +397,7 @@ async def _render_cat(
         if isinstance(quote, Exception):
             lines.append(f"{item.symbol} — недоступно")
         else:
-            lines.append(_short_line(asset_type, quote))
+            lines.append(_short_line(asset_type, item.symbol, quote, item.quantity))
         builder.row(
             InlineKeyboardButton(
                 text=f"{TYPE_ICONS[asset_type]} {item.symbol}",
@@ -463,6 +518,59 @@ async def on_pf_add(callback: CallbackQuery) -> None:
 # ---------------------------------------------------------- inline: FSM добавления
 
 
+async def _add_item(
+    telegram_id: int, symbol: str, asset_type: str, quantity: float | None
+) -> bool:
+    """Добавляет актив в портфель; True если добавлен (не было до этого)."""
+    async for session in get_session():
+        exists = (
+            await session.execute(
+                select(PortfolioItem).where(
+                    PortfolioItem.telegram_id == telegram_id,
+                    PortfolioItem.symbol == symbol,
+                )
+            )
+        ).scalar()
+        if exists is None:
+            session.add(
+                PortfolioItem(
+                    telegram_id=telegram_id,
+                    asset_type=asset_type,
+                    symbol=symbol,
+                    quantity=quantity,
+                )
+            )
+            await session.commit()
+            added = True
+        else:
+            added = False
+    return added
+
+
+async def _parse_qty(raw: str) -> float | None:
+    """Парсит количество; None — некорректное значение."""
+    try:
+        qty = float(raw.replace(",", "."))
+    except ValueError:
+        return None
+    if qty <= 0:
+        return None
+    return qty
+
+
+async def _added_message(
+    added: bool, symbol: str, asset_type: str, quantity: float | None
+) -> str:
+    """Сообщение о результате добавления актива в портфель."""
+    qty_suffix = f" ({_fmt_qty(quantity)} шт.)" if quantity is not None else ""
+    if added:
+        return (
+            f"✅ {TYPE_ICONS[asset_type]} <b>{symbol}</b> добавлен в портфель "
+            f"({TYPE_TITLES[asset_type]}){qty_suffix}."
+        )
+    return f"{TYPE_ICONS[asset_type]} <b>{symbol}</b> уже в портфеле."
+
+
 @router.callback_query(F.data == "pf:add_menu")
 async def on_pf_add_menu(callback: CallbackQuery, state: FSMContext) -> None:
     """Начинает FSM добавления произвольного актива."""
@@ -479,7 +587,7 @@ async def on_pf_add_menu(callback: CallbackQuery, state: FSMContext) -> None:
 
 @router.message(AddState.symbol)
 async def on_add_symbol(message: Message, state: FSMContext) -> None:
-    """Принимает символ и добавляет актив в портфель."""
+    """Принимает символ и спрашивает количество."""
     symbol = (message.text or "").strip().upper().split(" ", 1)[0]
     asset_type = resolve_asset_type(symbol)
     if asset_type is None:
@@ -488,43 +596,114 @@ async def on_add_symbol(message: Message, state: FSMContext) -> None:
             "или валюту (USD)."
         )
         return
-    async for session in get_session():
-        exists = (
-            await session.execute(
-                select(PortfolioItem).where(
-                    PortfolioItem.telegram_id == message.from_user.id,
-                    PortfolioItem.symbol == symbol,
-                )
-            )
-        ).scalar()
-        if exists is None:
-            session.add(
-                PortfolioItem(
-                    telegram_id=message.from_user.id,
-                    asset_type=asset_type,
-                    symbol=symbol,
-                )
-            )
-            await session.commit()
-            added = True
-        else:
-            added = False
+    await state.update_data(symbol=symbol, asset_type=asset_type)
+    await state.set_state(AddState.quantity)
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="⏭️ Пропустить", callback_data="pf:add_skip"),
+        InlineKeyboardButton(text="↩️ Отмена", callback_data="pf:add_cancel"),
+    )
+    await message.answer(
+        f"Сколько у тебя <b>{symbol}</b>? Напиши число (например 5 или 0.5) "
+        "или пропусти.",
+        reply_markup=builder.as_markup(),
+    )
+
+
+@router.message(AddState.quantity)
+async def on_add_quantity(message: Message, state: FSMContext) -> None:
+    """Принимает количество и добавляет актив в портфель."""
+    qty = await _parse_qty((message.text or "").strip())
+    if qty is None:
+        await message.answer("Это не число. Напиши количество цифрами (например 5).")
+        return
+    data = await state.get_data()
+    symbol = data["symbol"]
+    asset_type = data["asset_type"]
+    added = await _add_item(message.from_user.id, symbol, asset_type, qty)
     await state.clear()
     _, kb = await _render_pf_menu(message.from_user.id)
     await message.answer(
-        (
-            f"✅ {TYPE_ICONS[asset_type]} <b>{symbol}</b> добавлен в портфель "
-            f"({TYPE_TITLES[asset_type]})."
-            if added
-            else f"{TYPE_ICONS[asset_type]} <b>{symbol}</b> уже в портфеле."
-        ),
-        reply_markup=kb,
+        await _added_message(added, symbol, asset_type, qty), reply_markup=kb
     )
+
+
+@router.callback_query(F.data == "pf:add_skip")
+async def on_pf_add_skip(callback: CallbackQuery, state: FSMContext) -> None:
+    """Добавляет актив без количества."""
+    data = await state.get_data()
+    symbol = data.get("symbol")
+    asset_type = data.get("asset_type")
+    if not symbol or not asset_type:
+        await state.clear()
+        await callback.answer("Диалог устарел. Начни заново.", show_alert=True)
+        return
+    added = await _add_item(callback.from_user.id, symbol, asset_type, None)
+    await state.clear()
+    _, kb = await _render_pf_menu(callback.from_user.id)
+    await callback.message.answer(
+        await _added_message(added, symbol, asset_type, None), reply_markup=kb
+    )
+    await callback.answer()
 
 
 @router.callback_query(F.data == "pf:add_cancel")
 async def on_pf_add_cancel(callback: CallbackQuery, state: FSMContext) -> None:
     """Отменяет FSM добавления актива."""
+    await state.clear()
+    text, kb = await _render_pf_menu(callback.from_user.id)
+    await callback.message.edit_text(f"Отменено.\n\n{text}", reply_markup=kb)
+    await callback.answer()
+
+
+# -------------------------------------------------- inline: FSM количества
+
+
+@router.callback_query(F.data.regexp(r"^pf:qty:[A-Z0-9.\-]+$"))
+async def on_pf_qty(callback: CallbackQuery, state: FSMContext) -> None:
+    """Начинает FSM изменения количества актива."""
+    symbol = callback.data.split(":", 2)[2]
+    await state.set_state(QtyState.quantity)
+    await state.update_data(symbol=symbol)
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="↩️ Отмена", callback_data="pf:qty_cancel"))
+    await callback.message.edit_text(
+        f"✏️ Сколько у тебя <b>{symbol}</b>? Введи число (например 5 или 0.5).",
+        reply_markup=builder.as_markup(),
+    )
+    await callback.answer()
+
+
+@router.message(QtyState.quantity)
+async def on_qty_value(message: Message, state: FSMContext) -> None:
+    """Принимает количество и сохраняет его."""
+    qty = await _parse_qty((message.text or "").strip())
+    if qty is None:
+        await message.answer("Это не число. Напиши количество цифрами (например 5).")
+        return
+    data = await state.get_data()
+    symbol = data["symbol"]
+    async for session in get_session():
+        await session.execute(
+            update(PortfolioItem)
+            .where(
+                PortfolioItem.telegram_id == message.from_user.id,
+                PortfolioItem.symbol == symbol,
+            )
+            .values(quantity=qty)
+        )
+        await session.commit()
+    await state.clear()
+    _, kb = await _render_pf_menu(message.from_user.id)
+    await message.answer(
+        f"✅ Для <b>{symbol}</b> задано количество {_fmt_qty(qty)}.",
+        reply_markup=kb,
+    )
+
+
+@router.callback_query(F.data == "pf:qty_cancel")
+async def on_pf_qty_cancel(callback: CallbackQuery, state: FSMContext) -> None:
+    """Отменяет изменение количества."""
     await state.clear()
     text, kb = await _render_pf_menu(callback.from_user.id)
     await callback.message.edit_text(f"Отменено.\n\n{text}", reply_markup=kb)

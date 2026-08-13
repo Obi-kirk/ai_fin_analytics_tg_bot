@@ -8,8 +8,10 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from src.handlers.portfolio import (
     _alert_line,
     _cache_key,
+    _fmt_qty,
     _mark_added,
     _pf_menu_kb,
+    _quote_text,
     _short_line,
     parse_alert_args,
     resolve_asset_type,
@@ -143,15 +145,44 @@ class TestPortfolioKb:
 class TestShortLine:
     def test_fx(self) -> None:
         quote = FxQuote(code="USD", name="Доллар", value=88.5, nominal=1)
-        assert _short_line("fx", quote) == "USD — 88.50 ₽"
+        assert _short_line("fx", "USD", quote) == "USD — 88.50 ₽"
 
     def test_stock(self) -> None:
         quote = StockQuote(symbol="AAPL", price=100.5, change_percent=1.23)
-        assert _short_line("stock", quote) == "AAPL — $100.50 (+1.23%)"
+        assert _short_line("stock", "AAPL", quote) == "AAPL — $100.50 (+1.23%)"
 
     def test_stock_negative(self) -> None:
         quote = StockQuote(symbol="NVDA", price=140.1, change_percent=-2.5)
-        assert _short_line("stock", quote) == "NVDA — $140.10 (-2.50%)"
+        assert _short_line("stock", "NVDA", quote) == "NVDA — $140.10 (-2.50%)"
+
+    def test_with_quantity_int(self) -> None:
+        quote = StockQuote(symbol="AAPL", price=100.5, change_percent=1.23)
+        assert _short_line("stock", "AAPL", quote, 5.0) == "AAPL — $100.50 (+1.23%) ×5"
+
+    def test_with_quantity_float(self) -> None:
+        quote = StockQuote(symbol="BTC", price=100.5, change_percent=1.23)
+        assert _short_line("crypto", "BTC", quote, 0.5) == "BTC — $100.50 (+1.23%) ×0.5"
+
+
+class TestQuoteTextQuantity:
+    def test_stock_cost(self) -> None:
+        quote = StockQuote(symbol="AAPL", price=302.25, change_percent=0.5)
+        text = _quote_text("stock", "AAPL", quote, 5)
+        assert "Количество: 5" in text
+        assert "Стоимость: <b>1,511.25 $</b>" in text
+
+    def test_no_quantity(self) -> None:
+        quote = StockQuote(symbol="AAPL", price=302.25, change_percent=0.5)
+        text = _quote_text("stock", "AAPL", quote)
+        assert "Количество" not in text
+
+
+class TestFmtQty:
+    def test_integer(self) -> None:
+        assert _fmt_qty(5.0) == "5"
+
+    def test_float(self) -> None:
+        assert _fmt_qty(0.5) == "0.5"
 
 
 class TestCacheKey:

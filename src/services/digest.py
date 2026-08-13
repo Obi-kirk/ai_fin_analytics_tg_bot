@@ -69,12 +69,18 @@ async def _user_assets(telegram_id: int) -> dict[str, list[str]]:
     return groups
 
 
-def _line(asset_type: str, symbol: str, quote: object) -> str:
+def _line(
+    asset_type: str, symbol: str, quote: object, quantity: float | None = None
+) -> str:
     """Однострочное описание котировки для дайджеста."""
     if asset_type == "fx":
-        return f"{quote.code} — {quote.value:.2f} ₽"
-    sign = "+" if quote.change_percent >= 0 else ""
-    return f"{symbol} — ${quote.price:,.2f} ({sign}{quote.change_percent:.2f}%)"
+        base = f"{quote.code} — {quote.value:.2f} ₽"
+    else:
+        sign = "+" if quote.change_percent >= 0 else ""
+        base = f"{symbol} — ${quote.price:,.2f} ({sign}{quote.change_percent:.2f}%)"
+    if quantity is not None:
+        base += f" ×{quantity:g}"
+    return base
 
 
 async def _fetch_quote(asset_type: str, symbol: str, cache: TTLCache) -> object:
@@ -174,7 +180,7 @@ async def build_digest(telegram_id: int, cache: TTLCache) -> str:
         for item in items:
             try:
                 quote = await _fetch_quote(item.asset_type, item.symbol, cache)
-                lines.append(_line(item.asset_type, item.symbol, quote))
+                lines.append(_line(item.asset_type, item.symbol, quote, item.quantity))
             except Exception:  # noqa: BLE001 — один актив не роняет дайджест
                 lines.append(f"{item.symbol} — недоступно")
 
