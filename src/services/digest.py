@@ -31,7 +31,7 @@ DIGEST_DISCLAIMER = "\n\n— <i>Это не инвестиционная рек�
 
 # Доступные для настройки своего набора (те же источники, что в меню)
 DIGEST_AVAILABLE = {
-    "fx": CBR_CURRENCIES,
+    "fx": tuple(sorted(CBR_CURRENCIES)),
     "stock": (
         "AAPL",
         "NVDA",
