@@ -16,6 +16,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from src.config.settings import get_settings
 from src.handlers.crypto import fetch_crypto, format_crypto
+from src.handlers.portfolio import open_portfolio
 from src.handlers.rate import fetch_fx, format_fx
 from src.handlers.stock import fetch_stock, format_stock, resolve_stock_symbol
 from src.services.cache import TTLCache
@@ -30,7 +31,7 @@ MAIN_MENU = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="💱 Курсы"), KeyboardButton(text="📈 Акции")],
         [KeyboardButton(text="🪙 Крипта"), KeyboardButton(text="🤖 AI-анализ")],
-        [KeyboardButton(text="❓ Помощь")],
+        [KeyboardButton(text="📁 Портфель"), KeyboardButton(text="❓ Помощь")],
     ],
     resize_keyboard=True,
 )
@@ -121,27 +122,41 @@ def submenu_kb(kind: str) -> InlineKeyboardMarkup:
 
 
 def refresh_kb(cache_key: str) -> InlineKeyboardMarkup:
-    """Кнопки под ответом: «Обновить», для акций — «Новости», возврат в подменю."""
+    """Кнопки под карточкой цены: обновить, для акций — новости,
+    добавить в портфель, возврат в подменю.
+    """
     kind = cache_key.split(":", 1)[0]
-    buttons = [
+    symbol = cache_key.split(":", 1)[1]
+    builder = InlineKeyboardBuilder()
+    row1 = [
         InlineKeyboardButton(text="🔄 Обновить", callback_data=f"refresh:{cache_key}")
     ]
     if kind == "stock":
-        symbol = cache_key.split(":", 1)[1]
-        buttons.append(
+        row1.append(
             InlineKeyboardButton(text="📰 Новости", callback_data=f"news:{symbol}")
         )
-    buttons.append(
-        InlineKeyboardButton(text="↩️ Меню", callback_data=f"submenu:{kind}")
+    builder.row(*row1)
+    builder.row(
+        InlineKeyboardButton(text="➕ В портфель", callback_data=f"pf:add:{symbol}"),
+        InlineKeyboardButton(text="↩️ Меню", callback_data=f"submenu:{kind}"),
     )
-    return InlineKeyboardMarkup(inline_keyboard=[buttons])
+    return builder.as_markup()
 
 
 # ------------------------------------------------------------ reply-обработчики
 
 
 @router.message(
-    F.text.in_({"💱 Курсы", "📈 Акции", "🪙 Крипта", "🤖 AI-анализ", "❓ Помощь"})
+    F.text.in_(
+        {
+            "💱 Курсы",
+            "📈 Акции",
+            "🪙 Крипта",
+            "🤖 AI-анализ",
+            "📁 Портфель",
+            "❓ Помощь",
+        }
+    )
 )
 async def on_menu_button(message: Message) -> None:
     """Реагирует на кнопки главного меню."""
@@ -151,12 +166,16 @@ async def on_menu_button(message: Message) -> None:
         "📈 Акции": "stock",
         "🪙 Крипта": "crypto",
         "🤖 AI-анализ": "analyse",
+        "📁 Портфель": "portfolio",
         "❓ Помощь": "help",
     }[text]
     if kind == "help":
         from src.handlers.help import HELP_TEXT
 
         await message.answer(HELP_TEXT, reply_markup=MAIN_MENU)
+        return
+    if kind == "portfolio":
+        await open_portfolio(message)
         return
     await message.answer(MENU_TITLES[kind], reply_markup=submenu_kb(kind))
 
