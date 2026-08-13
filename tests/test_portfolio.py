@@ -148,6 +148,10 @@ class TestShortLine:
         quote = FxQuote(code="USD", name="Доллар", value=88.5, nominal=1)
         assert _short_line("fx", "USD", quote) == "USD — 88.50 ₽"
 
+    def test_fx_nominal(self) -> None:
+        quote = FxQuote(code="JPY", name="Иена", value=0.5234, nominal=100)
+        assert _short_line("fx", "JPY", quote) == "JPY — 52.34 ₽ за 100"
+
     def test_stock(self) -> None:
         quote = StockQuote(symbol="AAPL", price=100.5, change_percent=1.23)
         assert _short_line("stock", "AAPL", quote) == "AAPL — $100.50 (+1.23%)"

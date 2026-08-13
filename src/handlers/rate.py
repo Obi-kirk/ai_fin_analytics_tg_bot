@@ -4,6 +4,7 @@
 сумма → валюта «из» → валюта «в» → результат.
 """
 
+import asyncio
 import logging
 import re
 
@@ -411,13 +412,10 @@ async def cmd_convert(message: Message, state: FSMContext, cache: TTLCache) -> N
 
 @router.message(Command("rate"))
 async def cmd_rate(message: Message, cache: TTLCache) -> None:
-    """Показывает курс валюты, например: /rate USD."""
+    """Показывает курс валюты: /rate USD; без аргумента — все валюты ЦБ."""
     args = message.text.split(maxsplit=1)
     if len(args) < 2:
-        await message.answer(
-            "Укажи валюту, например: /rate USD\n"
-            f"Поддерживаются: {', '.join(sorted(CBR_CURRENCIES))}"
-        )
+        await _send_all_rates(message, cache)
         return
     code = args[1].strip().upper()
     if code not in CBR_CURRENCIES:
@@ -439,10 +437,41 @@ async def cmd_rate(message: Message, cache: TTLCache) -> None:
     await message.answer(format_fx(quote))
 
 
+def _fx_short_line(quote: FxQuote) -> str:
+    """Компактная строка курса валюты: «USD — 88.50 ₽» (за номинал ЦБ)."""
+    rate = quote.value * quote.nominal
+    suffix = f" за {quote.nominal}" if quote.nominal != 1 else ""
+    return f"{quote.code} — {rate:.2f} ₽{suffix}"
+
+
+async def _send_all_rates(message: Message, cache: TTLCache) -> None:
+    """Показывает курсы всех валют ЦБ одним сообщением."""
+    quotes = await asyncio.gather(
+        *[fetch_fx(code) for code in CBR_CURRENCIES],
+        return_exceptions=True,
+    )
+    lines = ["💱 <b>Курсы ЦБ РФ</b>\n"]
+    for code, quote in zip(sorted(CBR_CURRENCIES), quotes):
+        if isinstance(quote, Exception):
+            log.warning("Не удалось получить курс %s от ЦБ РФ", code)
+            continue
+        lines.append(_fx_short_line(quote))
+    if len(lines) == 1:
+        await message.answer("😔 Не удалось получить курсы. Попробуй позже.")
+        return
+    lines.append("\nПодробнее: /rate USD")
+    await message.answer("\n".join(lines))
+
+
 def format_fx(quote: FxQuote) -> str:
-    """Форматирует курс валюты для Telegram (HTML)."""
+    """Форматирует курс валюты для Telegram (HTML).
+
+    ЦБ отдаёт value за 1 единицу; показываем курс за номинал
+    (для JPY — «52.08 ₽ за 100», как принято в банковских таблицах).
+    """
+    rate = quote.value * quote.nominal
     suffix = f" за {quote.nominal}" if quote.nominal != 1 else ""
     return (
         f"💱 <b>{quote.name}</b> ({quote.code})\n"
-        f"Курс: <b>{quote.value:.2f} ₽</b>{suffix}\n\nИсточник: ЦБ РФ"
+        f"Курс: <b>{rate:.2f} ₽</b>{suffix}\n\nИсточник: ЦБ РФ"
     )
