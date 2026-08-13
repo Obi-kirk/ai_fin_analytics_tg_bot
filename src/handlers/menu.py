@@ -182,7 +182,7 @@ def refresh_kb(cache_key: str) -> InlineKeyboardMarkup:
         }
     )
 )
-async def on_menu_button(message: Message) -> None:
+async def on_menu_button(message: Message, cache: TTLCache) -> None:
     """Реагирует на кнопки главного меню."""
     text = message.text or ""
     kind = {
@@ -199,7 +199,7 @@ async def on_menu_button(message: Message) -> None:
         await message.answer(HELP_TEXT, reply_markup=MAIN_MENU)
         return
     if kind == "portfolio":
-        await open_portfolio(message)
+        await open_portfolio(message, cache)
         return
     await message.answer(MENU_TITLES[kind], reply_markup=submenu_kb(kind))
 

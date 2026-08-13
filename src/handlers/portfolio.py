@@ -173,7 +173,51 @@ def _pf_menu_kb(counts: dict[str, int]) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-async def _render_pf_menu(telegram_id: int) -> tuple[str, InlineKeyboardMarkup]:
+async def _portfolio_value(telegram_id: int, cache: TTLCache) -> str:
+    """Строка общей стоимости портфеля (USD/₽); '' — нет данных о количестве."""
+    async for session in get_session():
+        items = (
+            (
+                await session.execute(
+                    select(PortfolioItem).where(
+                        PortfolioItem.telegram_id == telegram_id,
+                        PortfolioItem.quantity.is_not(None),
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+    if not items:
+        return ""
+    usd_rate: float | None = None
+    try:
+        usd = await _fetch_quote("fx", "USD", cache)
+        usd_rate = usd.value / usd.nominal
+    except Exception:  # noqa: BLE001 — без курса USD сумма в ₽ недоступна
+        log.warning("Не удалось получить курс USD для суммы портфеля")
+    usd_total = 0.0
+    for item in items:
+        try:
+            quote = await _fetch_quote(item.asset_type, item.symbol, cache)
+        except Exception:  # noqa: BLE001 — один актив не роняет сумму
+            log.warning("Не удалось получить цену %s для суммы портфеля", item.symbol)
+            continue
+        if item.asset_type == "fx":
+            if usd_rate:
+                usd_total += (quote.value / quote.nominal) / usd_rate * item.quantity
+        else:
+            usd_total += quote.price * item.quantity
+    if usd_total <= 0:
+        return ""
+    rub = usd_total * usd_rate if usd_rate else None
+    rub_part = f" • <b>{rub:,.0f} ₽</b>" if rub else ""
+    return f"\n💰 Стоимость: <b>${usd_total:,.2f}</b>{rub_part}"
+
+
+async def _render_pf_menu(
+    telegram_id: int, cache: TTLCache | None = None
+) -> tuple[str, InlineKeyboardMarkup]:
     """Текст и клавиатура главного меню портфеля."""
     counts = await _pf_counts(telegram_id)
     if sum(counts.values()) == 0:
@@ -184,12 +228,20 @@ async def _render_pf_menu(telegram_id: int) -> tuple[str, InlineKeyboardMarkup]:
         )
     else:
         text = "📁 <b>Мой портфель</b>\n\nВыбери категорию или действие."
+        if cache is not None:
+            value_str = await cache.get_or_set(
+                f"pf:value:{telegram_id}",
+                lambda: _portfolio_value(telegram_id, cache),
+                get_settings().cache_ttl_stock_seconds,
+            )
+            if value_str:
+                text += value_str
     return text, _pf_menu_kb(counts)
 
 
-async def open_portfolio(message: Message) -> None:
+async def open_portfolio(message: Message, cache: TTLCache | None = None) -> None:
     """Открывает inline-меню портфеля (reply-кнопка «📁 Портфель» и /portfolio)."""
-    text, kb = await _render_pf_menu(message.from_user.id)
+    text, kb = await _render_pf_menu(message.from_user.id, cache)
     await message.answer(text, reply_markup=kb)
 
 
@@ -409,18 +461,18 @@ async def _list_items(telegram_id: int, asset_type: str) -> list[PortfolioItem]:
 
 
 @router.message(Command("portfolio"))
-async def cmd_portfolio(message: Message) -> None:
+async def cmd_portfolio(message: Message, cache: TTLCache) -> None:
     """Открывает inline-меню портфеля."""
-    await open_portfolio(message)
+    await open_portfolio(message, cache)
 
 
 # ---------------------------------------------------------- inline: главное меню
 
 
 @router.callback_query(F.data == "pf:menu")
-async def on_pf_menu(callback: CallbackQuery) -> None:
+async def on_pf_menu(callback: CallbackQuery, cache: TTLCache) -> None:
     """Показывает главное меню портфеля."""
-    text, kb = await _render_pf_menu(callback.from_user.id)
+    text, kb = await _render_pf_menu(callback.from_user.id, cache)
     await callback.message.edit_text(text, reply_markup=kb)
     await callback.answer()
 
@@ -669,7 +721,7 @@ async def on_add_symbol(message: Message, state: FSMContext) -> None:
 
 
 @router.message(AddState.quantity)
-async def on_add_quantity(message: Message, state: FSMContext) -> None:
+async def on_add_quantity(message: Message, state: FSMContext, cache: TTLCache) -> None:
     """Принимает количество и добавляет актив в портфель."""
     qty = await _parse_qty((message.text or "").strip())
     if qty is None:
@@ -680,14 +732,16 @@ async def on_add_quantity(message: Message, state: FSMContext) -> None:
     asset_type = data["asset_type"]
     added = await _add_item(message.from_user.id, symbol, asset_type, qty)
     await state.clear()
-    _, kb = await _render_pf_menu(message.from_user.id)
+    _, kb = await _render_pf_menu(message.from_user.id, cache)
     await message.answer(
         await _added_message(added, symbol, asset_type, qty), reply_markup=kb
     )
 
 
 @router.callback_query(F.data == "pf:add_skip")
-async def on_pf_add_skip(callback: CallbackQuery, state: FSMContext) -> None:
+async def on_pf_add_skip(
+    callback: CallbackQuery, state: FSMContext, cache: TTLCache
+) -> None:
     """Добавляет актив без количества."""
     data = await state.get_data()
     symbol = data.get("symbol")
@@ -698,7 +752,7 @@ async def on_pf_add_skip(callback: CallbackQuery, state: FSMContext) -> None:
         return
     added = await _add_item(callback.from_user.id, symbol, asset_type, None)
     await state.clear()
-    _, kb = await _render_pf_menu(callback.from_user.id)
+    _, kb = await _render_pf_menu(callback.from_user.id, cache)
     await callback.message.answer(
         await _added_message(added, symbol, asset_type, None), reply_markup=kb
     )
@@ -706,10 +760,12 @@ async def on_pf_add_skip(callback: CallbackQuery, state: FSMContext) -> None:
 
 
 @router.callback_query(F.data == "pf:add_cancel")
-async def on_pf_add_cancel(callback: CallbackQuery, state: FSMContext) -> None:
+async def on_pf_add_cancel(
+    callback: CallbackQuery, state: FSMContext, cache: TTLCache
+) -> None:
     """Отменяет FSM добавления актива."""
     await state.clear()
-    text, kb = await _render_pf_menu(callback.from_user.id)
+    text, kb = await _render_pf_menu(callback.from_user.id, cache)
     await callback.message.edit_text(f"Отменено.\n\n{text}", reply_markup=kb)
     await callback.answer()
 
@@ -733,7 +789,7 @@ async def on_pf_qty(callback: CallbackQuery, state: FSMContext) -> None:
 
 
 @router.message(QtyState.quantity)
-async def on_qty_value(message: Message, state: FSMContext) -> None:
+async def on_qty_value(message: Message, state: FSMContext, cache: TTLCache) -> None:
     """Принимает количество и сохраняет его."""
     qty = await _parse_qty((message.text or "").strip())
     if qty is None:
@@ -752,7 +808,7 @@ async def on_qty_value(message: Message, state: FSMContext) -> None:
         )
         await session.commit()
     await state.clear()
-    _, kb = await _render_pf_menu(message.from_user.id)
+    _, kb = await _render_pf_menu(message.from_user.id, cache)
     await message.answer(
         f"✅ Для <b>{symbol}</b> задано количество {_fmt_qty(qty)}.",
         reply_markup=kb,
@@ -760,10 +816,12 @@ async def on_qty_value(message: Message, state: FSMContext) -> None:
 
 
 @router.callback_query(F.data == "pf:qty_cancel")
-async def on_pf_qty_cancel(callback: CallbackQuery, state: FSMContext) -> None:
+async def on_pf_qty_cancel(
+    callback: CallbackQuery, state: FSMContext, cache: TTLCache
+) -> None:
     """Отменяет изменение количества."""
     await state.clear()
-    text, kb = await _render_pf_menu(callback.from_user.id)
+    text, kb = await _render_pf_menu(callback.from_user.id, cache)
     await callback.message.edit_text(f"Отменено.\n\n{text}", reply_markup=kb)
     await callback.answer()
 
@@ -841,7 +899,7 @@ async def on_pf_del(callback: CallbackQuery) -> None:
 @router.callback_query(
     F.data.regexp(r"^pf:confirm_del:(fx|stock|crypto):[A-Z0-9.\-]+$")
 )
-async def on_pf_confirm_del(callback: CallbackQuery) -> None:
+async def on_pf_confirm_del(callback: CallbackQuery, cache: TTLCache) -> None:
     """Подтверждённое удаление актива из портфеля."""
     _, _, asset_type, symbol = callback.data.split(":", 3)
     async for session in get_session():
@@ -852,7 +910,7 @@ async def on_pf_confirm_del(callback: CallbackQuery) -> None:
             )
         )
         await session.commit()
-    text, kb = await _render_pf_menu(callback.from_user.id)
+    text, kb = await _render_pf_menu(callback.from_user.id, cache)
     await callback.message.edit_text(
         f"✅ {TYPE_ICONS[asset_type]} <b>{symbol}</b> убран из портфеля.\n\n{text}",
         reply_markup=kb,
@@ -861,9 +919,9 @@ async def on_pf_confirm_del(callback: CallbackQuery) -> None:
 
 
 @router.callback_query(F.data == "pf:cancel_del")
-async def on_pf_cancel_del(callback: CallbackQuery) -> None:
+async def on_pf_cancel_del(callback: CallbackQuery, cache: TTLCache) -> None:
     """Отменяет удаление и возвращает главное меню портфеля."""
-    text, kb = await _render_pf_menu(callback.from_user.id)
+    text, kb = await _render_pf_menu(callback.from_user.id, cache)
     await callback.message.edit_text(text, reply_markup=kb)
     await callback.answer()
 
@@ -1257,10 +1315,12 @@ async def on_alert_dir(
 
 
 @router.callback_query(F.data == "pf:alert_cancel")
-async def on_alert_cancel(callback: CallbackQuery, state: FSMContext) -> None:
+async def on_alert_cancel(
+    callback: CallbackQuery, state: FSMContext, cache: TTLCache
+) -> None:
     """Отменяет FSM создания алерта."""
     await state.clear()
-    text, kb = await _render_pf_menu(callback.from_user.id)
+    text, kb = await _render_pf_menu(callback.from_user.id, cache)
     await callback.message.edit_text(f"Отменено.\n\n{text}", reply_markup=kb)
     await callback.answer()
 
