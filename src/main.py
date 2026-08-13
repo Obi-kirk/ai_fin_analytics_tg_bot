@@ -3,6 +3,7 @@
 Запуск: python -m src.main [--reload]
 """
 
+import asyncio
 import logging
 import sys
 from logging.handlers import RotatingFileHandler
@@ -21,12 +22,14 @@ from src.handlers.crypto import router as crypto_router
 from src.handlers.errors import router as errors_router
 from src.handlers.help import router as help_router
 from src.handlers.menu import router as menu_router
+from src.handlers.portfolio import router as portfolio_router
 from src.handlers.rate import router as rate_router
 from src.handlers.start import router as start_router
 from src.handlers.stock import router as stock_router
 from src.middleware.query_log import QueryLogMiddleware
 from src.middleware.throttling import ThrottlingMiddleware
 from src.middleware.users import BotStats, UsersMiddleware
+from src.services.alerts import run_alert_loop
 from src.services.cache import TTLCache
 from src.utils.redact import RedactFormatter
 
@@ -67,6 +70,9 @@ async def _setup_bot_commands(bot: Bot, admin_id: int | None) -> None:
         BotCommand(command="top", description="Топ по капитализации"),
         BotCommand(command="news", description="Новости по тикеру: /news AAPL"),
         BotCommand(command="analyze", description="AI-анализ: /analyze BTC"),
+        BotCommand(command="portfolio", description="Мой портфель"),
+        BotCommand(command="alert", description="Алерт: /alert BTC 70000"),
+        BotCommand(command="alerts", description="Мои алерты"),
         BotCommand(command="myrole", description="Моя роль"),
         BotCommand(command="help", description="Справка"),
     ]
@@ -122,6 +128,7 @@ async def main() -> None:
     dp.include_router(help_router)
     dp.include_router(menu_router)
     dp.include_router(rate_router)
+    dp.include_router(portfolio_router)
     dp.include_router(stock_router)
     dp.include_router(crypto_router)
     dp.include_router(analyze_router)
@@ -130,9 +137,13 @@ async def main() -> None:
     await _setup_bot_commands(bot, settings.admin_id)
 
     log.info("Бот запущен (polling)")
+    alert_task = asyncio.create_task(
+        run_alert_loop(bot, settings.alert_interval_seconds)
+    )
     try:
         await dp.start_polling(bot)
     finally:
+        alert_task.cancel()
         await cache.stop_gc()
         await bot.session.close()
         await close_db()

@@ -289,6 +289,27 @@ class CoinGeckoClient:
         except (KeyError, TypeError, ValueError) as exc:
             raise LookupError(f"CoinGecko не знает монету {coin_id}") from exc
 
+    async def get_prices_batch(
+        self, coin_ids: list[str], session: aiohttp.ClientSession
+    ) -> dict[str, float]:
+        """Цены нескольких монет одним запросом: {id: цена USD}.
+
+        Экономит бесплатный лимит CoinGecko для фоновых алертов.
+        """
+        if not coin_ids:
+            return {}
+        url = f"{self.BASE_URL}/simple/price"
+        payload = await self._get(
+            url, {"ids": ",".join(coin_ids), "vs_currencies": "usd"}, session
+        )
+        prices: dict[str, float] = {}
+        for coin_id, data in payload.items():
+            try:
+                prices[coin_id] = float(data["usd"])
+            except (KeyError, TypeError, ValueError):
+                continue
+        return prices
+
     async def get_market_data(
         self, coin_id: str, session: aiohttp.ClientSession
     ) -> dict[str, Any]:

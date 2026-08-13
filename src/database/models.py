@@ -1,8 +1,8 @@
-"""Модели БД: пользователи и история запросов."""
+"""Модели БД: пользователи, история запросов, портфель, алерты."""
 
 from datetime import datetime, timezone
 
-from sqlalchemy import BigInteger, Boolean, DateTime, Integer, String
+from sqlalchemy import BigInteger, Boolean, DateTime, Float, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.database.db import Base
@@ -25,6 +25,39 @@ class User(Base):
     )
     role: Mapped[str] = mapped_column(
         String(16), default="user", server_default="user", nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, server_default="now()"
+    )
+
+
+class PortfolioItem(Base):
+    """Актив из портфеля (watchlist) пользователя: валюты, акции, крипта."""
+
+    __tablename__ = "portfolio_items"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    telegram_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    asset_type: Mapped[str] = mapped_column(String(8))  # fx | stock | crypto
+    symbol: Mapped[str] = mapped_column(String(16))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, server_default="now()"
+    )
+
+
+class Alert(Base):
+    """Алерт на цену: сработает, когда цена пересечёт порог (active)."""
+
+    __tablename__ = "alerts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    telegram_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    asset_type: Mapped[str] = mapped_column(String(8))  # fx | stock | crypto
+    symbol: Mapped[str] = mapped_column(String(16))
+    target_price: Mapped[float] = mapped_column(Float)
+    direction: Mapped[str] = mapped_column(String(8))  # above | below
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, default=True, server_default="true"
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, server_default="now()"
