@@ -770,17 +770,34 @@ async def on_pf_cancel_alert_del(callback: CallbackQuery) -> None:
 # ---------------------------------------------------------- inline: FSM алерта
 
 
+async def _cached_price_hint(asset_type: str, symbol: str, cache: TTLCache) -> str:
+    """Текущая цена из кэша (подсказка при вводе цены алерта)."""
+    quote = await cache.get(_cache_key(asset_type, symbol))
+    if quote is None:
+        return ""
+    if asset_type == "fx":
+        return f"Текущая цена: <b>{quote.value:.2f} ₽</b>\n"
+    sign = "+" if quote.change_percent >= 0 else ""
+    return (
+        f"Текущая цена: <b>${quote.price:,.2f}</b> "
+        f"({sign}{quote.change_percent:.2f}%)\n"
+    )
+
+
 @router.callback_query(F.data.regexp(r"^pf:alert:[A-Z0-9.\-]+$"))
-async def on_pf_alert(callback: CallbackQuery, state: FSMContext) -> None:
+async def on_pf_alert(
+    callback: CallbackQuery, state: FSMContext, cache: TTLCache
+) -> None:
     """Начинает FSM создания алерта: просит цену."""
     symbol = callback.data.split(":", 2)[2]
+    asset_type = resolve_asset_type(symbol) or "stock"
     await state.set_state(AlertState.price)
-    await state.update_data(symbol=symbol)
+    await state.update_data(symbol=symbol, asset_type=asset_type)
+    hint = await _cached_price_hint(asset_type, symbol, cache)
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="↩️ Отмена", callback_data="pf:alert_cancel"))
     await callback.message.edit_text(
-        f"🔔 Цена алерта для <b>{symbol}</b>?\n"
-        "Напиши число (например 70000 или 3500,5). /cancel — выйти.",
+        f"🔔 Цена алерта для <b>{symbol}</b>?\n{hint}Напиши число.",
         reply_markup=builder.as_markup(),
     )
     await callback.answer()
@@ -793,7 +810,7 @@ async def on_alert_price(message: Message, state: FSMContext) -> None:
     try:
         price = float(raw)
     except ValueError:
-        await message.answer("Это не число. Напиши цену цифрами (например 70000).")
+        await message.answer("Это не число. Напиши цену цифрами.")
         return
     if price <= 0:
         await message.answer("Цена должна быть больше нуля.")
@@ -825,7 +842,7 @@ async def on_alert_dir(callback: CallbackQuery, state: FSMContext) -> None:
         await state.clear()
         await callback.answer("Диалог устарел. Начни заново.", show_alert=True)
         return
-    asset_type = resolve_asset_type(symbol) or "stock"
+    asset_type = data.get("asset_type") or resolve_asset_type(symbol) or "stock"
     async for session in get_session():
         session.add(
             Alert(
