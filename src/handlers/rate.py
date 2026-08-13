@@ -438,10 +438,15 @@ async def cmd_rate(message: Message, cache: TTLCache) -> None:
 
 
 def _fx_short_line(quote: FxQuote) -> str:
-    """Компактная строка курса валюты: «USD — 88.50 ₽» (за номинал ЦБ)."""
-    rate = quote.value * quote.nominal
-    suffix = f" за {quote.nominal}" if quote.nominal != 1 else ""
-    return f"{quote.code} — {rate:.2f} ₽{suffix}"
+    """Компактная строка курса валюты за 1 единицу: «JPY — 0.5209 ₽»."""
+    return f"{quote.code} — {_format_rate(quote.value)} ₽"
+
+
+def _format_rate(value: float) -> str:
+    """Курс за 1 единицу: >=1 — 2 знака, иначе 4 (VND, KZT, JPY)."""
+    if value >= 1:
+        return f"{value:.2f}"
+    return f"{value:.4f}"
 
 
 async def _send_all_rates(message: Message, cache: TTLCache) -> None:
@@ -464,14 +469,8 @@ async def _send_all_rates(message: Message, cache: TTLCache) -> None:
 
 
 def format_fx(quote: FxQuote) -> str:
-    """Форматирует курс валюты для Telegram (HTML).
-
-    ЦБ отдаёт value за 1 единицу; показываем курс за номинал
-    (для JPY — «52.08 ₽ за 100», как принято в банковских таблицах).
-    """
-    rate = quote.value * quote.nominal
-    suffix = f" за {quote.nominal}" if quote.nominal != 1 else ""
+    """Форматирует курс валюты за 1 единицу для Telegram (HTML)."""
     return (
         f"💱 <b>{quote.name}</b> ({quote.code})\n"
-        f"Курс: <b>{rate:.2f} ₽</b>{suffix}\n\nИсточник: ЦБ РФ"
+        f"Курс: <b>{_format_rate(quote.value)} ₽</b>\n\nИсточник: ЦБ РФ"
     )

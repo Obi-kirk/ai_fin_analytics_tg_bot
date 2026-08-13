@@ -75,8 +75,8 @@ def test_format_fx_with_nominal() -> None:
     text = format_fx(
         FxQuote(code="JPY", name="Японская иена", value=0.5234, nominal=100)
     )
-    assert "52.34 ₽" in text
-    assert "за 100" in text
+    assert "0.5234 ₽" in text
+    assert "за 100" not in text
 
 
 class TestConvert:
@@ -124,7 +124,7 @@ class TestConvert:
         q = FxQuote(code="USD", name="Доллар", value=88.5, nominal=1)
         assert _fx_short_line(q) == "USD — 88.50 ₽"
         q100 = FxQuote(code="JPY", name="Иена", value=0.5234, nominal=100)
-        assert _fx_short_line(q100) == "JPY — 52.34 ₽ за 100"
+        assert _fx_short_line(q100) == "JPY — 0.5234 ₽"
 
     def test_convert_kb_swap(self) -> None:
         kb = convert_kb(100.0, "USD", "RUB")

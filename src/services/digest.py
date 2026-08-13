@@ -74,9 +74,8 @@ def _line(
 ) -> str:
     """Однострочное описание котировки для дайджеста."""
     if asset_type == "fx":
-        rate = quote.value * quote.nominal
-        suffix = f" за {quote.nominal}" if quote.nominal != 1 else ""
-        base = f"{quote.code} — {rate:.2f} ₽{suffix}"
+        rate = f"{quote.value:.2f}" if quote.value >= 1 else f"{quote.value:.4f}"
+        base = f"{quote.code} — {rate} ₽"
     else:
         sign = "+" if quote.change_percent >= 0 else ""
         base = f"{symbol} — ${quote.price:,.2f} ({sign}{quote.change_percent:.2f}%)"
