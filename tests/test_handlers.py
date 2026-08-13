@@ -166,6 +166,16 @@ def test_format_stock_sign() -> None:
     assert "$100.50" in up
 
 
+def test_format_stock_display() -> None:
+    # индекс показывается исходным алиасом (VIX), а не ETF-тикером (VIXY)
+    text = format_stock(
+        StockQuote(symbol="VIXY", price=18.77, change_percent=-2.75),
+        display="VIX",
+    )
+    assert "<b>VIX</b>" in text
+    assert "VIXY" not in text
+
+
 def test_format_crypto() -> None:
     text = format_crypto(
         "BTC", StockQuote(symbol="bitcoin", price=63942.0, change_percent=-1.84)

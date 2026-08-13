@@ -220,8 +220,7 @@ async def on_stock(callback: CallbackQuery, cache: TTLCache) -> None:
         f"stock:{symbol}",
         settings.cache_ttl_stock_seconds,
         lambda: fetch_stock(symbol),
-        format_stock,
-        render_arg=raw if raw != symbol else None,
+        lambda q: format_stock(q, display=raw),
     )
 
 
