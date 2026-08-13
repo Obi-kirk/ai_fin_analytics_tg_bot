@@ -60,7 +60,11 @@ class PortfolioItem(Base):
 
 
 class Alert(Base):
-    """Алерт на цену: сработает, когда цена пересечёт порог (active)."""
+    """Алерт на цену: сработает, когда цена пересечёт порог (active).
+
+    mode: "absolute" — target_price это цена; "percent" — target_price это
+    процент изменения от baseline_price (цены на момент установки).
+    """
 
     __tablename__ = "alerts"
 
@@ -70,6 +74,10 @@ class Alert(Base):
     symbol: Mapped[str] = mapped_column(String(16))
     target_price: Mapped[float] = mapped_column(Float)
     direction: Mapped[str] = mapped_column(String(8))  # above | below
+    mode: Mapped[str] = mapped_column(
+        String(8), default="absolute", server_default="absolute", nullable=False
+    )
+    baseline_price: Mapped[float | None] = mapped_column(Float, nullable=True)
     is_active: Mapped[bool] = mapped_column(
         Boolean, default=True, server_default="true"
     )

@@ -30,6 +30,20 @@ class TestAlertTriggered:
     def test_unknown_direction(self) -> None:
         assert alert_triggered(100, 50, "sideways") is False
 
+    def test_percent_above(self) -> None:
+        # baseline=100, +5% -> 105
+        assert alert_triggered(105, 5, "above", mode="percent", baseline=100) is True
+        assert alert_triggered(104.9, 5, "above", mode="percent", baseline=100) is False
+
+    def test_percent_below(self) -> None:
+        # baseline=100, -5% -> 95
+        assert alert_triggered(95, 5, "below", mode="percent", baseline=100) is True
+        assert alert_triggered(95.1, 5, "below", mode="percent", baseline=100) is False
+
+    def test_percent_without_baseline_falls_back(self) -> None:
+        # нет baseline — поведение как у absolute
+        assert alert_triggered(70000, 70000, "above", mode="percent") is True
+
 
 class TestGeckoId:
     def test_known_coin(self) -> None:

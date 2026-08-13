@@ -21,11 +21,23 @@ from src.services.financial_api import CoinGeckoClient, make_session
 
 log = logging.getLogger(__name__)
 
-ALERT_FORMAT = (
-    "🔔 <b>Алерт сработал</b>\n"
-    "{symbol}: <b>${price:,.2f}</b> — {direction} порога "
-    "<b>${target:,.2f}</b>\n\nУправление: /alerts"
-)
+
+def _alert_message(alert: Alert, price: float) -> str:
+    """Текст уведомления: для %-алерта — изменение от базовой цены."""
+    arrow = "выше" if alert.direction == "above" else "ниже"
+    if alert.mode == "percent" and alert.baseline_price:
+        change_pct = (price - alert.baseline_price) / alert.baseline_price * 100
+        return (
+            "🔔 <b>Алерт сработал</b>\n"
+            f"{alert.symbol}: цена <b>${price:,.2f}</b> — изменилась на "
+            f"<b>{change_pct:+.2f}%</b> ({arrow} порога {alert.target_price:,.2f}%)\n"
+            "\nУправление: /alerts"
+        )
+    return (
+        "🔔 <b>Алерт сработал</b>\n"
+        f"{alert.symbol}: <b>${price:,.2f}</b> — {arrow} порога "
+        f"<b>${alert.target_price:,.2f}</b>\n\nУправление: /alerts"
+    )
 
 
 def _gecko_id(symbol: str) -> str:
@@ -33,8 +45,26 @@ def _gecko_id(symbol: str) -> str:
     return COINS.get(symbol, symbol.lower())
 
 
-def alert_triggered(price: float, target: float, direction: str) -> bool:
-    """Правило срабатывания алерта (above: цена >= порог, below: <=)."""
+def alert_triggered(
+    price: float,
+    target: float,
+    direction: str,
+    mode: str = "absolute",
+    baseline: float | None = None,
+) -> bool:
+    """Правило срабатывания алерта.
+
+    absolute: above — цена >= порога, below — цена <= порога.
+    percent: изменение цены от baseline (цены на момент установки) в %;
+    above — выросло на target%, below — упало на target%.
+    """
+    if mode == "percent" and baseline:
+        change_pct = (price - baseline) / baseline * 100
+        if direction == "above":
+            return change_pct >= target
+        if direction == "below":
+            return change_pct <= -target
+        return False
     if direction == "above":
         return price >= target
     if direction == "below":
@@ -93,17 +123,18 @@ async def check_alerts(bot: Bot) -> int:
                 price = prices.get(alert.symbol)
                 if price is None:
                     continue
-                if not alert_triggered(price, alert.target_price, alert.direction):
+                if not alert_triggered(
+                    price,
+                    alert.target_price,
+                    alert.direction,
+                    alert.mode,
+                    alert.baseline_price,
+                ):
                     continue
                 try:
                     await bot.send_message(
                         alert.telegram_id,
-                        ALERT_FORMAT.format(
-                            symbol=alert.symbol,
-                            price=price,
-                            direction=alert.direction,
-                            target=alert.target_price,
-                        ),
+                        _alert_message(alert, price),
                     )
                 except Exception:  # noqa: BLE001 — один недоставленный алерт не фатален
                     log.warning(
