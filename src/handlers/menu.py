@@ -66,28 +66,31 @@ STOCKS_TOP10 = (
 )
 INDEXES = ("SPX", "DJI", "VIX")
 CRYPTO_TOP10 = ("BTC", "ETH", "SOL", "XRP", "DOGE", "ADA", "LTC", "BNB", "AVAX", "DOT")
-ANALYSE_SHORT = (
-    "AAPL",
-    "TSLA",
-    "NVDA",
-    "MSFT",
-    "GOOGL",
-    "AMZN",
-    "META",
-    "AMD",
-    "SPX",
-    "DJI",
-    "BTC",
-    "ETH",
-    "SOL",
-    "XRP",
-)
+ANALYSE_GROUPS = {
+    "stock": (
+        "AAPL",
+        "TSLA",
+        "NVDA",
+        "MSFT",
+        "GOOGL",
+        "AMZN",
+        "META",
+        "AMD",
+    ),
+    "index": ("SPX", "DJI", "VIX"),
+    "crypto": ("BTC", "ETH", "SOL", "XRP"),
+}
+ANALYSE_GROUP_TITLES = {
+    "stock": "📈 Акции",
+    "index": "📊 Индексы",
+    "crypto": "🪙 Крипта",
+}
 
 MENU_TITLES = {
     "fx": "💱 Выбери валюту",
     "stock": "📈 Выбери акцию или индекс",
     "crypto": "🪙 Выбери монету",
-    "analyse": "🤖 Выбери актив для AI-анализа",
+    "analyse": "🤖 Выбери категорию для AI-анализа",
 }
 
 
@@ -125,13 +128,14 @@ def submenu_kb(kind: str) -> InlineKeyboardMarkup:
                 ]
             )
     elif kind == "analyse":
-        for i in range(0, len(ANALYSE_SHORT), 2):
-            builder.row(
-                *[
-                    InlineKeyboardButton(text=n, callback_data=f"analyse:{n}")
-                    for n in ANALYSE_SHORT[i : i + 2]
-                ]
-            )
+        builder.row(
+            *[
+                InlineKeyboardButton(
+                    text=ANALYSE_GROUP_TITLES[g], callback_data=f"analyse_cat:{g}"
+                )
+                for g in ANALYSE_GROUPS
+            ]
+        )
     else:
         raise ValueError(f"Неизвестное подменю: {kind}")
     return builder.as_markup()
@@ -280,6 +284,29 @@ async def on_submenu(callback: CallbackQuery) -> None:
     """Возвращает сообщение к подменю выбора (кнопка «↩️ Меню»)."""
     kind = callback.data.split(":", 1)[1]
     await callback.message.edit_text(MENU_TITLES[kind], reply_markup=submenu_kb(kind))
+    await callback.answer()
+
+
+@router.callback_query(F.data.regexp(r"^analyse_cat:(stock|index|crypto)$"))
+async def on_analyse_cat(callback: CallbackQuery) -> None:
+    """Список активов категории AI-анализа."""
+    group = callback.data.split(":", 1)[1]
+    builder = InlineKeyboardBuilder()
+    symbols = ANALYSE_GROUPS[group]
+    for i in range(0, len(symbols), 2):
+        builder.row(
+            *[
+                InlineKeyboardButton(text=n, callback_data=f"analyse:{n}")
+                for n in symbols[i : i + 2]
+            ]
+        )
+    builder.row(
+        InlineKeyboardButton(text="↩️ Категории", callback_data="submenu:analyse")
+    )
+    await callback.message.edit_text(
+        f"{ANALYSE_GROUP_TITLES[group]}: выбери актив для AI-анализа",
+        reply_markup=builder.as_markup(),
+    )
     await callback.answer()
 
 

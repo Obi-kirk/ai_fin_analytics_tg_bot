@@ -44,6 +44,7 @@ ANALYSE_TYPES = {
     "AMD": "stock",
     "SPX": "stock",
     "DJI": "stock",
+    "VIX": "stock",
     "BTC": "crypto",
     "ETH": "crypto",
     "SOL": "crypto",
