@@ -14,11 +14,12 @@ from sqlalchemy import select
 
 from src.config.settings import get_settings
 from src.database.db import get_session
-from src.database.models import DigestSubscription, PortfolioItem
+from src.database.models import DigestAsset, DigestSubscription, PortfolioItem
 from src.handlers.crypto import fetch_crypto
 from src.handlers.rate import fetch_fx
 from src.handlers.stock import fetch_stock, resolve_stock_symbol
 from src.services.cache import TTLCache
+from src.services.financial_api import CBR_CURRENCIES
 
 log = logging.getLogger(__name__)
 
@@ -27,6 +28,45 @@ DIGEST_STOCKS = ("AAPL", "NVDA", "MSFT", "TSLA", "META")
 DIGEST_CRYPTO = ("BTC", "ETH", "SOL", "XRP")
 
 DIGEST_DISCLAIMER = "\n\n— <i>Это не инвестиционная рекомендация.</i>"
+
+# Доступные для настройки своего набора (те же источники, что в меню)
+DIGEST_AVAILABLE = {
+    "fx": CBR_CURRENCIES,
+    "stock": (
+        "AAPL",
+        "NVDA",
+        "MSFT",
+        "GOOGL",
+        "AMZN",
+        "META",
+        "TSLA",
+        "AMD",
+        "SPX",
+        "DJI",
+        "VIX",
+    ),
+    "crypto": ("BTC", "ETH", "SOL", "XRP", "DOGE", "ADA", "LTC", "BNB"),
+}
+
+
+async def _user_assets(telegram_id: int) -> dict[str, list[str]]:
+    """Персональный набор активов дайджеста: {тип: [символы]}."""
+    async for session in get_session():
+        rows = (
+            (
+                await session.execute(
+                    select(DigestAsset)
+                    .where(DigestAsset.telegram_id == telegram_id)
+                    .order_by(DigestAsset.asset_type, DigestAsset.symbol)
+                )
+            )
+            .scalars()
+            .all()
+        )
+    groups: dict[str, list[str]] = {}
+    for row in rows:
+        groups.setdefault(row.asset_type, []).append(row.symbol)
+    return groups
 
 
 def _line(asset_type: str, symbol: str, quote: object) -> str:
@@ -77,13 +117,32 @@ async def _section(
 
 
 async def build_digest(telegram_id: int, cache: TTLCache) -> str:
-    """Собирает текст дайджеста для пользователя."""
+    """Собирает текст дайджеста для пользователя.
+
+    Если настроен персональный набор (digest_assets) — используется только
+    он; иначе дефолтный топ. Портфель добавляется всегда.
+    """
     lines = ["🌅 <b>Доброе утро! Дневной дайджест</b>\n"]
-    lines += await _section("💱 <b>Курсы ЦБ</b>", list(DIGEST_FX), "fx", cache)
-    lines.append("")
-    lines += await _section("📈 <b>Акции</b>", list(DIGEST_STOCKS), "stock", cache)
-    lines.append("")
-    lines += await _section("🪙 <b>Крипта</b>", list(DIGEST_CRYPTO), "crypto", cache)
+    user_assets = await _user_assets(telegram_id)
+    if user_assets:
+        if user_assets.get("fx"):
+            lines += await _section("💱 <b>Валюты</b>", user_assets["fx"], "fx", cache)
+        if user_assets.get("stock"):
+            lines += await _section(
+                "📈 <b>Акции</b>", user_assets["stock"], "stock", cache
+            )
+        if user_assets.get("crypto"):
+            lines += await _section(
+                "🪙 <b>Крипта</b>", user_assets["crypto"], "crypto", cache
+            )
+    else:
+        lines += await _section("💱 <b>Курсы ЦБ</b>", list(DIGEST_FX), "fx", cache)
+        lines.append("")
+        lines += await _section("📈 <b>Акции</b>", list(DIGEST_STOCKS), "stock", cache)
+        lines.append("")
+        lines += await _section(
+            "🪙 <b>Крипта</b>", list(DIGEST_CRYPTO), "crypto", cache
+        )
 
     async for session in get_session():
         items = (

@@ -105,3 +105,16 @@ class DigestSubscription(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, server_default="now()"
     )
+
+
+class DigestAsset(Base):
+    """Актив из персонального набора дайджеста (если задан — заменяет дефолт)."""
+
+    __tablename__ = "digest_assets"
+
+    telegram_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    symbol: Mapped[str] = mapped_column(String(16), primary_key=True)
+    asset_type: Mapped[str] = mapped_column(String(8))  # fx | stock | crypto
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, server_default="now()"
+    )
