@@ -52,7 +52,12 @@ from src.handlers.stock import (
     resolve_stock_symbol,
 )
 from src.services.cache import TTLCache
-from src.services.financial_api import CBR_CURRENCIES, ApiRateLimitError
+from src.services.financial_api import (
+    CBR_CURRENCIES,
+    ApiRateLimitError,
+    CoinGeckoClient,
+    make_session,
+)
 
 log = logging.getLogger(__name__)
 router = Router()
@@ -238,6 +243,7 @@ def _quote_text(
     symbol: str,
     quote: object,
     quantity: float | None = None,
+    trend: str = "",
 ) -> str:
     """Полный текст карточки актива (как в основном меню)."""
     if asset_type == "fx":
@@ -246,6 +252,8 @@ def _quote_text(
         text = format_stock(quote, display=symbol)
     else:
         text = format_crypto(symbol, quote)
+    if trend:
+        text += f"\n{trend}"
     if quantity is not None:
         currency = "₽" if asset_type == "fx" else "$"
         value = _per_unit(asset_type, quote) * quantity
@@ -294,6 +302,50 @@ async def _get_quantity(telegram_id: int, symbol: str) -> float | None:
     return quantity
 
 
+def _trend_change(prices: list[float], days: int) -> float | None:
+    """Изменение цены (%) от первой цены N дней назад до последней."""
+    if len(prices) < 2:
+        return None
+    step = max(1, len(prices) // days)
+    first = prices[-1 - step]
+    last = prices[-1]
+    if not first:
+        return None
+    return (last - first) / first * 100
+
+
+async def _fetch_price_history(coin_id: str) -> list[float]:
+    """История цен монеты за 30 дней (CoinGecko, для тренда 7д/30д)."""
+    async with make_session() as session:
+        client = CoinGeckoClient(get_settings().coingecko_api_key)
+        return await client.get_price_history(coin_id, session)
+
+
+async def _trend_hint(asset_type: str, symbol: str, cache: TTLCache) -> str:
+    """Строка тренда 7д/30д для крипты (для акций/валют данных нет)."""
+    if asset_type != "crypto":
+        return ""
+    settings = get_settings()
+    coin_id = COINS.get(symbol, symbol.lower())
+    try:
+        history = await cache.get_or_set(
+            f"crypto:chart:{symbol}",
+            lambda: _fetch_price_history(coin_id),
+            settings.cache_ttl_fundamental_seconds,
+        )
+    except Exception:  # noqa: BLE001 — тренд не критичен
+        log.warning("Не удалось получить историю цен для %s", symbol)
+        return ""
+    change_7 = _trend_change(history, 7)
+    change_30 = _trend_change(history, 30)
+    parts = []
+    if change_7 is not None:
+        parts.append(f"7д {change_7:+.2f}%")
+    if change_30 is not None:
+        parts.append(f"30д {change_30:+.2f}%")
+    return "Тренд: " + ", ".join(parts) if parts else ""
+
+
 def _cache_key(asset_type: str, symbol: str) -> str:
     """Кэш-ключ котировки (для stock — по resolved-тикеру)."""
     if asset_type == "stock":
@@ -322,8 +374,9 @@ async def _quote_and_edit_pf(
         )
         return
     quantity = await _get_quantity(callback.from_user.id, symbol)
+    trend = await _trend_hint(asset_type, symbol, cache)
     await callback.message.edit_text(
-        _quote_text(asset_type, symbol, quote, quantity),
+        _quote_text(asset_type, symbol, quote, quantity, trend),
         reply_markup=_pf_quote_kb(asset_type, symbol),
         disable_web_page_preview=True,
     )

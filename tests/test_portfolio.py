@@ -13,6 +13,7 @@ from src.handlers.portfolio import (
     _pf_menu_kb,
     _quote_text,
     _short_line,
+    _trend_change,
     parse_alert_args,
     resolve_asset_type,
 )
@@ -183,6 +184,34 @@ class TestFmtQty:
 
     def test_float(self) -> None:
         assert _fmt_qty(0.5) == "0.5"
+
+
+class TestTrendChange:
+    def test_up(self) -> None:
+        prices = [100.0, 105.0]
+        assert _trend_change(prices, 7) == 5.0
+
+    def test_down(self) -> None:
+        prices = [100.0, 90.0]
+        assert _trend_change(prices, 7) == -10.0
+
+    def test_too_short(self) -> None:
+        assert _trend_change([100.0], 7) is None
+
+    def test_empty(self) -> None:
+        assert _trend_change([], 7) is None
+
+
+class TestQuoteTextTrend:
+    def test_trend_appended(self) -> None:
+        quote = StockQuote(symbol="BTC", price=63588.5, change_percent=2.0)
+        text = _quote_text("crypto", "BTC", quote, trend="Тренд: 7д +5.00%, 30д -3.00%")
+        assert "Тренд: 7д +5.00%" in text
+
+    def test_no_trend_by_default(self) -> None:
+        quote = StockQuote(symbol="BTC", price=63588.5, change_percent=2.0)
+        text = _quote_text("crypto", "BTC", quote)
+        assert "Тренд" not in text
 
 
 class TestCacheKey:
