@@ -27,7 +27,7 @@ DIGEST_FX = ("USD", "EUR", "CNY", "JPY")
 DIGEST_STOCKS = ("AAPL", "NVDA", "MSFT", "TSLA", "META")
 DIGEST_CRYPTO = ("BTC", "ETH", "SOL", "XRP")
 
-DIGEST_DISCLAIMER = "\n\n— <i>Это не инвестиционная рекомендация.</i>"
+DIGEST_DISCLAIMER = "— <i>Это не инвестиционная рекомендация.</i>"
 
 # Доступные для настройки своего набора (те же источники, что в меню)
 DIGEST_AVAILABLE = {
@@ -177,6 +177,7 @@ async def build_digest(telegram_id: int, cache: TTLCache) -> str:
             except Exception:  # noqa: BLE001 — один актив не роняет дайджест
                 lines.append(f"{item.symbol} — недоступно")
 
+    lines.append("")
     lines.append(DIGEST_DISCLAIMER)
     return "\n".join(lines)
 
