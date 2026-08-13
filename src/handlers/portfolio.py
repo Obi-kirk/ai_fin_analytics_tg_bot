@@ -1164,9 +1164,10 @@ async def on_pf_alert_mode(
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="↩️ Отмена", callback_data="pf:alert_cancel"))
     if mode == "percent":
+        hint = await _cached_price_hint(data["asset_type"], symbol, cache)
         await callback.message.edit_text(
             f"📈 На сколько процентов должен измениться <b>{symbol}</b>?\n"
-            "Напиши число (например 5 или 3.5).",
+            f"{hint}Напиши число (например 5 или 3.5).",
             reply_markup=builder.as_markup(),
         )
     else:
