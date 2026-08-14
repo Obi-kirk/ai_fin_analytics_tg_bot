@@ -1,4 +1,4 @@
-"""Модели БД: пользователи, история запросов, портфель, алерты, дайджест."""
+"""DB models: users, query history, portfolio, alerts, digest."""
 
 from datetime import date, datetime, timezone
 
@@ -21,7 +21,7 @@ def _utcnow() -> datetime:
 
 
 class User(Base):
-    """Зарегистрированный пользователь бота (минимальный набор PII)."""
+    """Registered bot user (minimal set of PII)."""
 
     __tablename__ = "users"
 
@@ -41,11 +41,11 @@ class User(Base):
 
 
 class PortfolioItem(Base):
-    """Актив из портфеля (watchlist) пользователя: валюты, акции, крипта.
+    """An asset in the user's portfolio (watchlist): currencies, stocks, crypto.
 
-    quantity — количество у пользователя (для баланса). Чувствительная
-    персональная информация: хранится только в БД, не логируется и не
-    передаётся в LLM/внешние сервисы (AGENTS.md п.9).
+    quantity — the amount held by the user (for balance). Sensitive personal
+    data: stored only in the DB, never logged or passed to the LLM/external
+    services (AGENTS.md item 9).
     """
 
     __tablename__ = "portfolio_items"
@@ -61,10 +61,10 @@ class PortfolioItem(Base):
 
 
 class Alert(Base):
-    """Алерт на цену: сработает, когда цена пересечёт порог (active).
+    """Price alert: fires when the price crosses the threshold (active).
 
-    mode: "absolute" — target_price это цена; "percent" — target_price это
-    процент изменения от baseline_price (цены на момент установки).
+    mode: "absolute" — target_price is a price; "percent" — target_price is a
+    percentage change from baseline_price (the price at the moment of setup).
     """
 
     __tablename__ = "alerts"
@@ -88,10 +88,10 @@ class Alert(Base):
 
 
 class QueryLog(Base):
-    """Запись запроса пользователя: команда/колбэк, текст, время.
+    """User query record: command/callback, text, time.
 
-    Хранится только минимум: telegram_id (псевдоним), тип события
-    и обрезанный текст — без имён и контактов (AGENTS.md п.9).
+    Stores only the minimum: telegram_id (pseudonym), event type and a
+    truncated text — no names or contacts (AGENTS.md item 9).
     """
 
     __tablename__ = "query_log"
@@ -107,10 +107,10 @@ class QueryLog(Base):
 
 
 class DigestSubscription(Base):
-    """Подписка на ежедневный дайджест.
+    """Subscription to the daily digest.
 
-    last_sent — дата последней отправки (для пропуска повторной рассылки
-    в один день и корректного восстановления после рестарта).
+    last_sent — the date of the last send (to skip duplicate sends on the
+    same day and recover correctly after a restart).
     """
 
     __tablename__ = "digest_subscriptions"
@@ -123,7 +123,7 @@ class DigestSubscription(Base):
 
 
 class DigestAsset(Base):
-    """Актив из персонального набора дайджеста (если задан — заменяет дефолт)."""
+    """Asset from the user's personal digest set (if set — replaces the default)."""
 
     __tablename__ = "digest_assets"
 

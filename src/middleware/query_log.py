@@ -1,7 +1,7 @@
-"""Middleware истории запросов: пишет каждое событие пользователя в БД.
+"""Query history middleware: writes every user event to the DB.
 
-Хранится минимум данных (AGENTS.md п.9): telegram_id, тип события,
-обрезанный текст — без имён и контактов. Сбой записи не роняет запрос.
+Stores minimal data (AGENTS.md item 9): telegram_id, event type and a
+truncated text — no names or contacts. A write failure must not break the request.
 """
 
 import logging
@@ -19,13 +19,13 @@ MAX_COMMAND_LENGTH = 64
 
 
 class QueryLogMiddleware(BaseMiddleware):
-    """Логирует сообщения и колбэки в таблицу query_log."""
+    """Logs messages and callbacks to the query_log table."""
 
     async def __call__(self, handler, event: TelegramObject, data: dict) -> object:
         try:
             await self._write(event)
-        except Exception:  # noqa: BLE001 — лог не должен ронять запрос
-            log.warning("Не удалось записать запрос в историю")
+        except Exception:  # noqa: BLE001 — logging must not break the request
+            log.warning("Failed to write the request to history")
         return await handler(event, data)
 
     @staticmethod

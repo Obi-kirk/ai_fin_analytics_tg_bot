@@ -1,26 +1,26 @@
-"""Портфель (watchlist) и алерты цен: inline-интерфейс + команды.
+"""Portfolio (watchlist) and price alerts: inline interface + commands.
 
-Команды: /portfolio, /add, /remove, /alert, /alerts, /remove_alert.
-Inline-колбэки:
-  pf:menu                        — главное меню портфеля
-  pf:cat:{type}                  — список активов категории с ценами
-  pf:view:{type}:{symbol}        — детальная карточка актива из портфеля
-  pf:refresh:{type}:{symbol}     — обновление карточки из портфеля
-  pf:add:{symbol}                — добавить актив (кнопка в карточке меню)
-  pf:remove                      — список активов для удаления
-  pf:del:{type}:{symbol}         — запрос подтверждения удаления
-  pf:confirm_del:{type}:{symbol} — подтвердить удаление
-  pf:cancel_del                  — отменить удаление
-  pf:alerts                      — список алертов
-  pf:alert_del:{id}              — запрос подтверждения удаления алерта
-  pf:confirm_alert_del:{id}      — подтвердить удаление алерта
-  pf:cancel_alert_del            — отменить удаление алерта
-  pf:alert:{symbol}              — начало FSM создания алерта (из карточки)
-  pf:alert_dir:above|below       — направление алерта (FSM)
-  pf:alert_cancel                — отмена FSM алерта
+Commands: /portfolio, /add, /remove, /alert, /alerts, /remove_alert.
+Inline callbacks:
+  pf:menu                        — main portfolio menu
+  pf:cat:{type}                  — category asset list with prices
+  pf:view:{type}:{symbol}        — detailed asset card from the portfolio
+  pf:refresh:{type}:{symbol}     — refresh card from the portfolio
+  pf:add:{symbol}                — add an asset (button on the menu card)
+  pf:remove                      — asset list for removal
+  pf:del:{type}:{symbol}         — ask for deletion confirmation
+  pf:confirm_del:{type}:{symbol} — confirm deletion
+  pf:cancel_del                  — cancel deletion
+  pf:alerts                      — alert list
+  pf:alert_del:{id}              — ask for alert deletion confirmation
+  pf:confirm_alert_del:{id}      — confirm alert deletion
+  pf:cancel_alert_del            — cancel alert deletion
+  pf:alert:{symbol}              — start the alert creation FSM (from card)
+  pf:alert_dir:above|below       — alert direction (FSM)
+  pf:alert_cancel                — cancel the alert FSM
 
-Тип актива определяется автоматически: валюта ЦБ -> fx, монета из списка
-CoinGecko -> crypto, иначе тикер акции -> stock.
+The asset type is detected automatically: CBR currency -> fx, coin from the
+CoinGecko list -> crypto, otherwise a stock ticker -> stock.
 """
 
 import asyncio
@@ -67,12 +67,12 @@ TYPE_ICONS = {"fx": "💱", "stock": "📈", "crypto": "🪙"}
 
 
 def _type_title(asset_type: str) -> str:
-    """Название категории на текущем языке."""
+    """Category name in the current language."""
     return t(f"portfolio.type.{asset_type}")
 
 
 class AlertState(StatesGroup):
-    """FSM создания алерта: тип -> значение (цена или %) -> направление."""
+    """FSM for alert creation: type -> value (price or %) -> direction."""
 
     mode = State()
     value = State()
@@ -80,25 +80,25 @@ class AlertState(StatesGroup):
 
 
 class AddState(StatesGroup):
-    """FSM добавления произвольного актива в портфель: символ -> количество."""
+    """FSM for adding an arbitrary asset to the portfolio: symbol -> quantity."""
 
     symbol = State()
     quantity = State()
 
 
 class QtyState(StatesGroup):
-    """FSM изменения количества актива в портфеле."""
+    """FSM for changing the asset quantity in the portfolio."""
 
     quantity = State()
 
 
 def _fmt_qty(q: float) -> str:
-    """Форматирует количество без лишних нулей (5.0 -> 5, 0.5 -> 0.5)."""
+    """Formats quantity without trailing zeros (5.0 -> 5, 0.5 -> 0.5)."""
     return f"{q:g}"
 
 
 def resolve_asset_type(symbol: str) -> str | None:
-    """Определяет тип актива: fx | stock | crypto (по символу)."""
+    """Determines the asset type: fx | stock | crypto (by symbol)."""
     if symbol in CBR_CURRENCIES:
         return "fx"
     if symbol in COINS:
@@ -109,7 +109,7 @@ def resolve_asset_type(symbol: str) -> str | None:
 
 
 def parse_alert_args(rest: str) -> tuple[str, str, float] | None:
-    """Разбирает аргументы /alert: <символ> [above|below] <цена>."""
+    """Parses /alert arguments: <symbol> [above|below] <price>."""
     parts = rest.strip().split()
     if len(parts) < 2 or len(parts) > 3:
         return None
@@ -132,7 +132,7 @@ def parse_alert_args(rest: str) -> tuple[str, str, float] | None:
 
 
 async def _pf_counts(telegram_id: int) -> dict[str, int]:
-    """Считает активы портфеля по категориям."""
+    """Counts portfolio assets by category."""
     counts = {"fx": 0, "stock": 0, "crypto": 0}
     async for session in get_session():
         rows = (
@@ -153,7 +153,7 @@ async def _pf_counts(telegram_id: int) -> dict[str, int]:
 
 
 def _pf_menu_kb(counts: dict[str, int]) -> InlineKeyboardMarkup:
-    """Главная клавиатура портфеля: только непустые категории + действия."""
+    """Main portfolio keyboard: non-empty categories only + actions."""
     builder = InlineKeyboardBuilder()
     cat_rows = [
         InlineKeyboardButton(
@@ -191,7 +191,7 @@ def _pf_menu_kb(counts: dict[str, int]) -> InlineKeyboardMarkup:
 
 
 async def _portfolio_value(telegram_id: int, cache: TTLCache) -> str:
-    """Строка общей стоимости портфеля (USD/₽); '' — нет данных о количестве."""
+    """Total portfolio value line (USD/RUB); '' — no quantity data."""
     async for session in get_session():
         items = (
             (
@@ -211,14 +211,14 @@ async def _portfolio_value(telegram_id: int, cache: TTLCache) -> str:
     try:
         usd = await _fetch_quote("fx", "USD", cache)
         usd_rate = usd.value / usd.nominal
-    except Exception:  # noqa: BLE001 — без курса USD сумма в ₽ недоступна
-        log.warning("Не удалось получить курс USD для суммы портфеля")
+    except Exception:  # noqa: BLE001 - RUB total unavailable without USD rate
+        log.warning("Failed to fetch the USD rate for the portfolio total")
     usd_total = 0.0
     for item in items:
         try:
             quote = await _fetch_quote(item.asset_type, item.symbol, cache)
-        except Exception:  # noqa: BLE001 — один актив не роняет сумму
-            log.warning("Не удалось получить цену %s для суммы портфеля", item.symbol)
+        except Exception:  # noqa: BLE001 — one asset must not break the total
+            log.warning("Failed to fetch price %s for the portfolio total", item.symbol)
             continue
         if item.asset_type == "fx":
             if usd_rate:
@@ -235,7 +235,7 @@ async def _portfolio_value(telegram_id: int, cache: TTLCache) -> str:
 async def _render_pf_menu(
     telegram_id: int, cache: TTLCache | None = None
 ) -> tuple[str, InlineKeyboardMarkup]:
-    """Текст и клавиатура главного меню портфеля."""
+    """Text and keyboard of the main portfolio menu."""
     counts = await _pf_counts(telegram_id)
     if sum(counts.values()) == 0:
         text = t("portfolio.empty")
@@ -253,13 +253,13 @@ async def _render_pf_menu(
 
 
 async def open_portfolio(message: Message, cache: TTLCache | None = None) -> None:
-    """Открывает inline-меню портфеля (reply-кнопка «📁 Портфель» и /portfolio)."""
+    """Opens the inline portfolio menu (the "Portfolio" reply button and /portfolio)."""
     text, kb = await _render_pf_menu(message.from_user.id, cache)
     await message.answer(text, reply_markup=kb)
 
 
 async def _fetch_quote(asset_type: str, symbol: str, cache: TTLCache) -> object:
-    """Котировка актива через кэш (по типу)."""
+    """Fetches an asset quote through the cache (by type)."""
     settings = get_settings()
     if asset_type == "fx":
         return await cache.get_or_set(
@@ -280,13 +280,13 @@ async def _fetch_quote(asset_type: str, symbol: str, cache: TTLCache) -> object:
             lambda: fetch_crypto(symbol),
             settings.cache_ttl_stock_seconds,
         )
-    raise ValueError(f"Неизвестный тип актива: {asset_type}")
+    raise ValueError(f"Unknown asset type: {asset_type}")
 
 
 def _short_line(
     asset_type: str, symbol: str, quote: object, quantity: float | None = None
 ) -> str:
-    """Однострочное описание котировки для списка категории."""
+    """One-line quote description for the category list."""
     if asset_type == "fx":
         rate = f"{quote.value:.2f}" if quote.value >= 1 else f"{quote.value:.4f}"
         base = f"{quote.code} — {rate} ₽"
@@ -299,7 +299,7 @@ def _short_line(
 
 
 def _per_unit(asset_type: str, quote: object) -> float:
-    """Цена за единицу актива (для fx — с учётом номинала ЦБ)."""
+    """Price per asset unit (for fx — taking the CBR nominal into account)."""
     if asset_type == "fx":
         return quote.value / quote.nominal
     return quote.price
@@ -312,7 +312,7 @@ def _quote_text(
     quantity: float | None = None,
     trend: str = "",
 ) -> str:
-    """Полный текст карточки актива (как в основном меню)."""
+    """Full asset card text (as in the main menu)."""
     if asset_type == "fx":
         text = format_fx(quote)
     elif asset_type == "stock":
@@ -334,7 +334,7 @@ def _quote_text(
 
 
 def _pf_quote_kb(asset_type: str, symbol: str) -> InlineKeyboardMarkup:
-    """Клавиатура карточки из портфеля: обновить/новости/алерт/кол-во/убрать."""
+    """Portfolio card keyboard: refresh/news/alert/qty/remove."""
     builder = InlineKeyboardBuilder()
     row1 = [
         InlineKeyboardButton(
@@ -374,7 +374,7 @@ def _pf_quote_kb(asset_type: str, symbol: str) -> InlineKeyboardMarkup:
 
 
 async def _get_quantity(telegram_id: int, symbol: str) -> float | None:
-    """Количество актива в портфеле пользователя (None — не задано)."""
+    """Asset quantity in the user's portfolio (None — not set)."""
     async for session in get_session():
         quantity = (
             await session.execute(
@@ -388,7 +388,7 @@ async def _get_quantity(telegram_id: int, symbol: str) -> float | None:
 
 
 def _trend_change(prices: list[float], days: int) -> float | None:
-    """Изменение цены (%) от первой цены N дней назад до последней."""
+    """Price change (%) from the price N days ago to the last one."""
     if len(prices) < 2:
         return None
     step = max(1, len(prices) // days)
@@ -400,14 +400,14 @@ def _trend_change(prices: list[float], days: int) -> float | None:
 
 
 async def _fetch_price_history(coin_id: str) -> list[float]:
-    """История цен монеты за 30 дней (CoinGecko, для тренда 7д/30д)."""
+    """30-day coin price history (CoinGecko, for the 7d/30d trend)."""
     async with make_session() as session:
         client = CoinGeckoClient(get_settings().coingecko_api_key)
         return await client.get_price_history(coin_id, session)
 
 
 async def _trend_hint(asset_type: str, symbol: str, cache: TTLCache) -> str:
-    """Строка тренда 7д/30д для крипты (для акций/валют данных нет)."""
+    """7d/30d trend line for crypto (no data for stocks/currencies)."""
     if asset_type != "crypto":
         return ""
     settings = get_settings()
@@ -418,8 +418,8 @@ async def _trend_hint(asset_type: str, symbol: str, cache: TTLCache) -> str:
             lambda: _fetch_price_history(coin_id),
             settings.cache_ttl_fundamental_seconds,
         )
-    except Exception:  # noqa: BLE001 — тренд не критичен
-        log.warning("Не удалось получить историю цен для %s", symbol)
+    except Exception:  # noqa: BLE001 — the trend is not critical
+        log.warning("Failed to fetch price history for %s", symbol)
         return ""
     change_7 = _trend_change(history, 7)
     change_30 = _trend_change(history, 30)
@@ -432,7 +432,7 @@ async def _trend_hint(asset_type: str, symbol: str, cache: TTLCache) -> str:
 
 
 def _cache_key(asset_type: str, symbol: str) -> str:
-    """Кэш-ключ котировки (для stock — по resolved-тикеру)."""
+    """Quote cache key (for stock — by the resolved ticker)."""
     if asset_type == "stock":
         return f"stock:{resolve_stock_symbol(symbol)}"
     return f"{asset_type}:{symbol}"
@@ -445,13 +445,13 @@ async def _quote_and_edit_pf(
     symbol: str,
     fetch: Callable[[], Awaitable[object]],
 ) -> None:
-    """Берёт котировку (с кэшем) и редактирует карточку портфеля."""
+    """Fetches the quote (with cache) and edits the portfolio card."""
     try:
         quote = await fetch()
     except ApiRateLimitError:
         await callback.answer(t("menu.api_limit"), show_alert=True)
         return
-    except Exception:  # noqa: BLE001 — граница внешнего API, ошибка уже залогирована
+    except Exception:  # noqa: BLE001 — external API boundary, error already logged
         await callback.answer(t("menu.fetch_failed"), show_alert=True)
         return
     quantity = await _get_quantity(callback.from_user.id, symbol)
@@ -465,7 +465,7 @@ async def _quote_and_edit_pf(
 
 
 async def _list_items(telegram_id: int, asset_type: str) -> list[PortfolioItem]:
-    """Активы портфеля одной категории (сортировка по символу)."""
+    """Portfolio assets of one category (sorted by symbol)."""
     async for session in get_session():
         items = (
             (
@@ -486,16 +486,16 @@ async def _list_items(telegram_id: int, asset_type: str) -> list[PortfolioItem]:
 
 @router.message(Command("portfolio"))
 async def cmd_portfolio(message: Message, cache: TTLCache) -> None:
-    """Открывает inline-меню портфеля."""
+    """Opens the inline portfolio menu."""
     await open_portfolio(message, cache)
 
 
-# ---------------------------------------------------------- inline: главное меню
+# ---------------------------------------------------------- inline: main menu
 
 
 @router.callback_query(F.data == "pf:menu")
 async def on_pf_menu(callback: CallbackQuery, cache: TTLCache) -> None:
-    """Показывает главное меню портфеля."""
+    """Shows the main portfolio menu."""
     text, kb = await _render_pf_menu(callback.from_user.id, cache)
     await callback.message.edit_text(text, reply_markup=kb)
     await callback.answer()
@@ -504,7 +504,7 @@ async def on_pf_menu(callback: CallbackQuery, cache: TTLCache) -> None:
 async def _render_cat(
     callback: CallbackQuery, cache: TTLCache, asset_type: str
 ) -> None:
-    """Список активов категории с живыми ценами."""
+    """Category asset list with live prices."""
     items = await _list_items(callback.from_user.id, asset_type)
     if not items:
         await callback.message.edit_text(
@@ -562,14 +562,14 @@ async def _render_cat(
 
 @router.callback_query(F.data.regexp(r"^pf:cat:(fx|stock|crypto)$"))
 async def on_pf_cat(callback: CallbackQuery, cache: TTLCache) -> None:
-    """Список активов категории с живыми ценами."""
+    """Category asset list with live prices."""
     asset_type = callback.data.split(":", 2)[2]
     await _render_cat(callback, cache, asset_type)
 
 
 @router.callback_query(F.data.regexp(r"^pf:cat_refresh:(fx|stock|crypto)$"))
 async def on_pf_cat_refresh(callback: CallbackQuery, cache: TTLCache) -> None:
-    """Сбрасывает кэш всех активов категории и пересобирает список."""
+    """Clears the cache of all category assets and rebuilds the list."""
     asset_type = callback.data.split(":", 2)[2]
     for item in await _list_items(callback.from_user.id, asset_type):
         await cache.delete(_cache_key(asset_type, item.symbol))
@@ -578,7 +578,7 @@ async def on_pf_cat_refresh(callback: CallbackQuery, cache: TTLCache) -> None:
 
 @router.callback_query(F.data.regexp(r"^pf:view:(fx|stock|crypto):[A-Z0-9.\-]+$"))
 async def on_pf_view(callback: CallbackQuery, cache: TTLCache) -> None:
-    """Детальная карточка актива из портфеля."""
+    """Detailed asset card from the portfolio."""
     _, _, asset_type, symbol = callback.data.split(":", 3)
     await _quote_and_edit_pf(
         callback,
@@ -591,7 +591,7 @@ async def on_pf_view(callback: CallbackQuery, cache: TTLCache) -> None:
 
 @router.callback_query(F.data.regexp(r"^pf:refresh:(fx|stock|crypto):[A-Z0-9.\-]+$"))
 async def on_pf_refresh(callback: CallbackQuery, cache: TTLCache) -> None:
-    """Обновляет карточку актива из портфеля (сброс кэша)."""
+    """Refreshes the portfolio asset card (cache reset)."""
     _, _, asset_type, symbol = callback.data.split(":", 3)
     await cache.delete(_cache_key(asset_type, symbol))
     await _quote_and_edit_pf(
@@ -603,11 +603,11 @@ async def on_pf_refresh(callback: CallbackQuery, cache: TTLCache) -> None:
     )
 
 
-# ---------------------------------------------------------- inline: добавление
+# ---------------------------------------------------------- inline: adding
 
 
 def _mark_added(markup: InlineKeyboardMarkup, symbol: str) -> InlineKeyboardMarkup:
-    """Заменяет кнопку «➕ В портфель» на неактивную «✅ В портфеле»."""
+    """Replaces the "Add to portfolio" button with an inactive "In portfolio" one."""
     rows = []
     for row in markup.inline_keyboard:
         new_row = []
@@ -626,7 +626,7 @@ def _mark_added(markup: InlineKeyboardMarkup, symbol: str) -> InlineKeyboardMark
 
 @router.callback_query(F.data.regexp(r"^pf:add:[A-Z0-9.\-]+$"))
 async def on_pf_add(callback: CallbackQuery) -> None:
-    """Добавляет актив в портфель (кнопка в карточке основного меню)."""
+    """Adds an asset to the portfolio (button on the main menu card)."""
     symbol = callback.data.split(":", 2)[2]
     asset_type = resolve_asset_type(symbol)
     if asset_type is None:
@@ -665,13 +665,13 @@ async def on_pf_add(callback: CallbackQuery) -> None:
     )
 
 
-# ---------------------------------------------------------- inline: FSM добавления
+# ---------------------------------------------------------- inline: add FSM
 
 
 async def _add_item(
     telegram_id: int, symbol: str, asset_type: str, quantity: float | None
 ) -> bool:
-    """Добавляет актив в портфель; True если добавлен (не было до этого)."""
+    """Adds an asset to the portfolio; True if it was added (did not exist before)."""
     async for session in get_session():
         exists = (
             await session.execute(
@@ -698,7 +698,7 @@ async def _add_item(
 
 
 async def _parse_qty(raw: str) -> float | None:
-    """Парсит количество; None — некорректное значение."""
+    """Parses the quantity; None — invalid value."""
     try:
         qty = float(raw.replace(",", "."))
     except ValueError:
@@ -711,7 +711,7 @@ async def _parse_qty(raw: str) -> float | None:
 async def _added_message(
     added: bool, symbol: str, asset_type: str, quantity: float | None
 ) -> str:
-    """Сообщение о результате добавления актива в портфель."""
+    """Message about the result of adding an asset to the portfolio."""
     qty_suffix = (
         t("portfolio.add.qty_suffix", qty=_fmt_qty(quantity))
         if quantity is not None
@@ -734,7 +734,7 @@ async def _added_message(
 
 @router.callback_query(F.data == "pf:add_menu")
 async def on_pf_add_menu(callback: CallbackQuery, state: FSMContext) -> None:
-    """Начинает FSM добавления произвольного актива."""
+    """Starts the FSM for adding an arbitrary asset."""
     await state.set_state(AddState.symbol)
     builder = InlineKeyboardBuilder()
     builder.row(
@@ -751,7 +751,7 @@ async def on_pf_add_menu(callback: CallbackQuery, state: FSMContext) -> None:
 
 @router.message(AddState.symbol)
 async def on_add_symbol(message: Message, state: FSMContext) -> None:
-    """Принимает символ и спрашивает количество."""
+    """Accepts the symbol and asks for the quantity."""
     symbol = (message.text or "").strip().upper().split(" ", 1)[0]
     asset_type = resolve_asset_type(symbol)
     if asset_type is None:
@@ -774,7 +774,7 @@ async def on_add_symbol(message: Message, state: FSMContext) -> None:
 
 @router.message(AddState.quantity)
 async def on_add_quantity(message: Message, state: FSMContext, cache: TTLCache) -> None:
-    """Принимает количество и добавляет актив в портфель."""
+    """Accepts the quantity and adds the asset to the portfolio."""
     qty = await _parse_qty((message.text or "").strip())
     if qty is None:
         await message.answer(t("portfolio.add.bad_qty"))
@@ -794,7 +794,7 @@ async def on_add_quantity(message: Message, state: FSMContext, cache: TTLCache) 
 async def on_pf_add_skip(
     callback: CallbackQuery, state: FSMContext, cache: TTLCache
 ) -> None:
-    """Добавляет актив без количества."""
+    """Adds the asset without a quantity."""
     data = await state.get_data()
     symbol = data.get("symbol")
     asset_type = data.get("asset_type")
@@ -815,7 +815,7 @@ async def on_pf_add_skip(
 async def on_pf_add_cancel(
     callback: CallbackQuery, state: FSMContext, cache: TTLCache
 ) -> None:
-    """Отменяет FSM добавления актива."""
+    """Cancels the asset adding FSM."""
     await state.clear()
     text, kb = await _render_pf_menu(callback.from_user.id, cache)
     await callback.message.edit_text(
@@ -824,12 +824,12 @@ async def on_pf_add_cancel(
     await callback.answer()
 
 
-# -------------------------------------------------- inline: FSM количества
+# -------------------------------------------------- inline: quantity FSM
 
 
 @router.callback_query(F.data.regexp(r"^pf:qty:[A-Z0-9.\-]+$"))
 async def on_pf_qty(callback: CallbackQuery, state: FSMContext) -> None:
-    """Начинает FSM изменения количества актива."""
+    """Starts the FSM for changing the asset quantity."""
     symbol = callback.data.split(":", 2)[2]
     await state.set_state(QtyState.quantity)
     await state.update_data(symbol=symbol)
@@ -848,7 +848,7 @@ async def on_pf_qty(callback: CallbackQuery, state: FSMContext) -> None:
 
 @router.message(QtyState.quantity)
 async def on_qty_value(message: Message, state: FSMContext, cache: TTLCache) -> None:
-    """Принимает количество и сохраняет его."""
+    """Accepts the quantity and saves it."""
     qty = await _parse_qty((message.text or "").strip())
     if qty is None:
         await message.answer(t("portfolio.add.bad_qty"))
@@ -877,7 +877,7 @@ async def on_qty_value(message: Message, state: FSMContext, cache: TTLCache) -> 
 async def on_pf_qty_cancel(
     callback: CallbackQuery, state: FSMContext, cache: TTLCache
 ) -> None:
-    """Отменяет изменение количества."""
+    """Cancels the quantity change."""
     await state.clear()
     text, kb = await _render_pf_menu(callback.from_user.id, cache)
     await callback.message.edit_text(
@@ -886,11 +886,11 @@ async def on_pf_qty_cancel(
     await callback.answer()
 
 
-# ---------------------------------------------------------- inline: удаление
+# ---------------------------------------------------------- inline: deletion
 
 
 async def _remove_kb(telegram_id: int) -> tuple[str, InlineKeyboardMarkup]:
-    """Список всех активов портфеля с кнопками удаления."""
+    """List of all portfolio assets with delete buttons."""
     async for session in get_session():
         items = (
             (
@@ -937,7 +937,7 @@ async def _remove_kb(telegram_id: int) -> tuple[str, InlineKeyboardMarkup]:
 
 @router.callback_query(F.data == "pf:remove")
 async def on_pf_remove(callback: CallbackQuery) -> None:
-    """Показывает список активов для удаления."""
+    """Shows the asset list for removal."""
     text, kb = await _remove_kb(callback.from_user.id)
     await callback.message.edit_text(text, reply_markup=kb)
     await callback.answer()
@@ -945,7 +945,7 @@ async def on_pf_remove(callback: CallbackQuery) -> None:
 
 @router.callback_query(F.data.regexp(r"^pf:del:(fx|stock|crypto):[A-Z0-9.\-]+$"))
 async def on_pf_del(callback: CallbackQuery) -> None:
-    """Запрашивает подтверждение удаления актива."""
+    """Asks for asset deletion confirmation."""
     _, _, asset_type, symbol = callback.data.split(":", 3)
     builder = InlineKeyboardBuilder()
     builder.row(
@@ -972,7 +972,7 @@ async def on_pf_del(callback: CallbackQuery) -> None:
     F.data.regexp(r"^pf:confirm_del:(fx|stock|crypto):[A-Z0-9.\-]+$")
 )
 async def on_pf_confirm_del(callback: CallbackQuery, cache: TTLCache) -> None:
-    """Подтверждённое удаление актива из портфеля."""
+    """Confirmed asset deletion from the portfolio."""
     _, _, asset_type, symbol = callback.data.split(":", 3)
     async for session in get_session():
         await session.execute(
@@ -992,7 +992,7 @@ async def on_pf_confirm_del(callback: CallbackQuery, cache: TTLCache) -> None:
 
 @router.callback_query(F.data == "pf:cancel_del")
 async def on_pf_cancel_del(callback: CallbackQuery, cache: TTLCache) -> None:
-    """Отменяет удаление и возвращает главное меню портфеля."""
+    """Cancels the deletion and returns to the main portfolio menu."""
     text, kb = await _render_pf_menu(callback.from_user.id, cache)
     await callback.message.edit_text(text, reply_markup=kb)
     await callback.answer()
@@ -1000,7 +1000,7 @@ async def on_pf_cancel_del(callback: CallbackQuery, cache: TTLCache) -> None:
 
 @router.message(Command("add"))
 async def cmd_add(message: Message, command: CommandObject) -> None:
-    """Добавляет актив в портфель: /add BTC (или AAPL, USD)."""
+    """Adds an asset to the portfolio: /add BTC (or AAPL, USD)."""
     symbol = ((command.args or "").strip().upper()).split(" ", 1)[0]
     asset_type = resolve_asset_type(symbol) if symbol else None
     if asset_type is None:
@@ -1041,7 +1041,7 @@ async def cmd_add(message: Message, command: CommandObject) -> None:
 
 @router.message(Command("remove"))
 async def cmd_remove(message: Message, command: CommandObject) -> None:
-    """Убирает актив из портфеля: /remove BTC."""
+    """Removes an asset from the portfolio: /remove BTC."""
     symbol = ((command.args or "").strip().upper()).split(" ", 1)[0]
     if not symbol:
         await message.answer(t("portfolio.cmd.remove.usage"))
@@ -1064,7 +1064,7 @@ async def cmd_remove(message: Message, command: CommandObject) -> None:
 
 @router.message(Command("alert"))
 async def cmd_alert(message: Message, command: CommandObject) -> None:
-    """Ставит алерт на цену: /alert BTC 70000 или /alert BTC below 50000."""
+    """Sets a price alert: /alert BTC 70000 or /alert BTC below 50000."""
     parsed = parse_alert_args(command.args or "")
     if parsed is None:
         await message.answer(t("portfolio.alert.usage"))
@@ -1099,7 +1099,7 @@ async def cmd_alert(message: Message, command: CommandObject) -> None:
 
 @router.message(Command("alerts"))
 async def cmd_alerts(message: Message) -> None:
-    """Показывает активные алерты пользователя."""
+    """Shows the user's active alerts."""
     async for session in get_session():
         alerts = (
             (
@@ -1125,11 +1125,11 @@ async def cmd_alerts(message: Message) -> None:
     await message.answer("\n".join(lines))
 
 
-# ---------------------------------------------------------- inline: алерты
+# ---------------------------------------------------------- inline: alerts
 
 
 def _alert_line(a: Alert) -> str:
-    """Однострочное описание алерта (без номера — нумерация в списке)."""
+    """One-line alert description (without a number — numbered in the list)."""
     arrow = (
         t("portfolio.alert.above")
         if a.direction == "above"
@@ -1147,7 +1147,7 @@ def _alert_line(a: Alert) -> str:
 
 
 async def _alerts_text_kb(telegram_id: int) -> tuple[str, InlineKeyboardMarkup]:
-    """Текст и клавиатура списка алертов с кнопками удаления."""
+    """Text and keyboard of the alert list with delete buttons."""
     async for session in get_session():
         alerts = (
             (
@@ -1194,7 +1194,7 @@ async def _alerts_text_kb(telegram_id: int) -> tuple[str, InlineKeyboardMarkup]:
 
 @router.callback_query(F.data == "pf:alerts")
 async def on_pf_alerts(callback: CallbackQuery) -> None:
-    """Показывает список алертов пользователя."""
+    """Shows the user's alert list."""
     text, kb = await _alerts_text_kb(callback.from_user.id)
     await callback.message.edit_text(text, reply_markup=kb)
     await callback.answer()
@@ -1202,7 +1202,7 @@ async def on_pf_alerts(callback: CallbackQuery) -> None:
 
 @router.callback_query(F.data.regexp(r"^pf:alert_del:\d+$"))
 async def on_pf_alert_del(callback: CallbackQuery) -> None:
-    """Запрашивает подтверждение удаления алерта."""
+    """Asks for alert deletion confirmation."""
     alert_id = int(callback.data.split(":", 2)[2])
     async for session in get_session():
         alert = (
@@ -1235,7 +1235,7 @@ async def on_pf_alert_del(callback: CallbackQuery) -> None:
 
 @router.callback_query(F.data.regexp(r"^pf:confirm_alert_del:\d+$"))
 async def on_pf_confirm_alert_del(callback: CallbackQuery) -> None:
-    """Подтверждённое удаление алерта."""
+    """Confirmed alert deletion."""
     alert_id = int(callback.data.split(":", 2)[2])
     async for session in get_session():
         await session.execute(
@@ -1255,17 +1255,17 @@ async def on_pf_confirm_alert_del(callback: CallbackQuery) -> None:
 
 @router.callback_query(F.data == "pf:cancel_alert_del")
 async def on_pf_cancel_alert_del(callback: CallbackQuery) -> None:
-    """Отменяет удаление алерта."""
+    """Cancels the alert deletion."""
     text, kb = await _alerts_text_kb(callback.from_user.id)
     await callback.message.edit_text(text, reply_markup=kb)
     await callback.answer()
 
 
-# ---------------------------------------------------------- inline: FSM алерта
+# ---------------------------------------------------------- inline: alert FSM
 
 
 async def _cached_price_hint(asset_type: str, symbol: str, cache: TTLCache) -> str:
-    """Текущая цена из кэша (подсказка при вводе цены алерта)."""
+    """Current price from the cache (hint when entering the alert price)."""
     quote = await cache.get(_cache_key(asset_type, symbol))
     if quote is None:
         return ""
@@ -1284,7 +1284,7 @@ async def _cached_price_hint(asset_type: str, symbol: str, cache: TTLCache) -> s
 async def on_pf_alert(
     callback: CallbackQuery, state: FSMContext, cache: TTLCache
 ) -> None:
-    """Начинает FSM создания алерта: выбор типа."""
+    """Starts the alert creation FSM: type selection."""
     symbol = callback.data.split(":", 2)[2]
     asset_type = resolve_asset_type(symbol) or "stock"
     await state.set_state(AlertState.mode)
@@ -1314,7 +1314,7 @@ async def on_pf_alert(
 async def on_pf_alert_mode(
     callback: CallbackQuery, state: FSMContext, cache: TTLCache
 ) -> None:
-    """Принимает тип алерта и просит значение (цену или процент)."""
+    """Accepts the alert type and asks for the value (price or percent)."""
     mode = callback.data.split(":", 2)[2]
     await state.update_data(mode=mode)
     await state.set_state(AlertState.value)
@@ -1343,7 +1343,7 @@ async def on_pf_alert_mode(
 
 @router.message(AlertState.value)
 async def on_alert_value(message: Message, state: FSMContext) -> None:
-    """Принимает значение (цену или %) и спрашивает направление."""
+    """Accepts the value (price or %) and asks for the direction."""
     raw = (message.text or "").strip().replace(",", ".").replace("%", "")
     try:
         value = float(raw)
@@ -1386,7 +1386,7 @@ async def on_alert_value(message: Message, state: FSMContext) -> None:
 async def on_alert_dir(
     callback: CallbackQuery, state: FSMContext, cache: TTLCache
 ) -> None:
-    """Выбор направления: создаёт алерт и завершает FSM."""
+    """Direction selection: creates the alert and finishes the FSM."""
     direction = callback.data.split(":", 2)[2]
     data = await state.get_data()
     symbol = data.get("symbol")
@@ -1442,7 +1442,7 @@ async def on_alert_dir(
 async def on_alert_cancel(
     callback: CallbackQuery, state: FSMContext, cache: TTLCache
 ) -> None:
-    """Отменяет FSM создания алерта."""
+    """Cancels the alert creation FSM."""
     await state.clear()
     text, kb = await _render_pf_menu(callback.from_user.id, cache)
     await callback.message.edit_text(
@@ -1453,7 +1453,7 @@ async def on_alert_cancel(
 
 @router.message(Command("remove_alert"))
 async def cmd_remove_alert(message: Message, command: CommandObject) -> None:
-    """Удаляет алерт по id: /remove_alert 3."""
+    """Deletes an alert by id: /remove_alert 3."""
     try:
         alert_id = int((command.args or "").strip().split()[0])
     except (ValueError, IndexError):

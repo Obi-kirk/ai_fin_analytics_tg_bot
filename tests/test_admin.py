@@ -1,7 +1,7 @@
-"""Тесты административных функций (без БД и сети).
+"""Admin function tests (no DB or network).
 
-Проверяются чистые функции: проверка прав админа, пагинация,
-парсинг аргументов, сериализация callback-данных.
+Pure functions are tested: admin rights check, pagination,
+argument parsing, callback-data serialization.
 """
 
 import pytest
@@ -27,7 +27,7 @@ class _FakeSettings:
 
 @pytest.fixture
 def admin_settings(monkeypatch: pytest.MonkeyPatch) -> _FakeSettings:
-    """Подменяет настройки: ADMIN_ID = 123456789 (один инстанс на тест)."""
+    """Replaces settings: ADMIN_ID = 123456789 (one instance per test)."""
     fake = _FakeSettings()
     monkeypatch.setattr(admin_mod, "get_settings", lambda: fake)
     return fake

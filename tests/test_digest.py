@@ -1,7 +1,17 @@
-"""Тесты дайджеста: чистые функции без БД и сети."""
+"""Digest tests: pure functions without DB and network."""
+
+import pytest
 
 from src.services.digest import _line
 from src.services.financial_api import FxQuote, StockQuote
+
+
+@pytest.fixture(autouse=True)
+def _use_ru():
+    """These tests check Russian text — set the language explicitly."""
+    from src.i18n import set_lang
+
+    set_lang("ru")
 
 
 class TestLine:

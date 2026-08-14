@@ -1,9 +1,10 @@
-"""Фоновый мониторинг алертов цен.
+"""Background price alert monitoring.
 
-Каждые ``alert_interval_seconds`` (по умолчанию 30 минут) проверяет активные
-алерты: для крипты — одним батч-запросом CoinGecko (экономия бесплатного
-лимита), для валют/акций — по одному запросу (лимиты ЦБ/Finnhub позволяют).
-При пересечении порога отправляет уведомление и деактивирует алерт.
+Every ``alert_interval_seconds`` (default 30 minutes) checks active
+alerts: for crypto — one CoinGecko batch request (saves the free
+quota), for currencies/stocks — one request each (CBR/Finnhub limits
+allow that). When a threshold is crossed, sends a notification and
+deactivates the alert.
 """
 
 import asyncio
@@ -24,7 +25,7 @@ log = logging.getLogger(__name__)
 
 
 def _alert_message(alert: Alert, price: float) -> str:
-    """Текст уведомления: для %-алерта — изменение от базовой цены."""
+    """Notification text: for %-alerts — change from the baseline price."""
     arrow = t("alerts.above") if alert.direction == "above" else t("alerts.below")
     if alert.mode == "percent" and alert.baseline_price:
         change_pct = (price - alert.baseline_price) / alert.baseline_price * 100
@@ -46,7 +47,7 @@ def _alert_message(alert: Alert, price: float) -> str:
 
 
 def _gecko_id(symbol: str) -> str:
-    """Символ монеты -> id CoinGecko (из COINS или lower-case)."""
+    """Coin symbol -> CoinGecko id (from COINS or lower-case)."""
     return COINS.get(symbol, symbol.lower())
 
 
@@ -57,11 +58,11 @@ def alert_triggered(
     mode: str = "absolute",
     baseline: float | None = None,
 ) -> bool:
-    """Правило срабатывания алерта.
+    """Alert trigger rule.
 
-    absolute: above — цена >= порога, below — цена <= порога.
-    percent: изменение цены от baseline (цены на момент установки) в %;
-    above — выросло на target%, below — упало на target%.
+    absolute: above — price >= threshold, below — price <= threshold.
+    percent: price change from baseline (price at setup time) in %;
+    above — grew by target%, below — dropped by target%.
     """
     if mode == "percent" and baseline:
         change_pct = (price - baseline) / baseline * 100
@@ -78,7 +79,7 @@ def alert_triggered(
 
 
 async def _fetch_prices(asset_type: str, symbols: list[str]) -> dict[str, float]:
-    """Цены для алертов одного типа: {symbol: цена}. Крипта — батчем."""
+    """Prices for alerts of one type: {symbol: price}. Crypto — in a batch."""
     prices: dict[str, float] = {}
     if not symbols:
         return prices
@@ -99,15 +100,13 @@ async def _fetch_prices(asset_type: str, symbols: list[str]) -> dict[str, float]
             elif asset_type == "stock":
                 quote = await fetch_stock(symbol)
                 prices[symbol] = quote.price
-        except Exception:  # noqa: BLE001 — один тикер не роняет весь цикл
-            log.warning(
-                "Не удалось получить цену %s для алерта (%s)", symbol, asset_type
-            )
+        except Exception:  # noqa: BLE001 — one ticker does not break the loop
+            log.warning("Failed to fetch price %s for alert (%s)", symbol, asset_type)
     return prices
 
 
 async def check_alerts(bot: Bot) -> int:
-    """Проверяет все активные алерты; возвращает число сработавших."""
+    """Checks all active alerts; returns the number of triggered ones."""
     async for session in get_session():
         alerts = (
             (await session.execute(select(Alert).where(Alert.is_active.is_(True))))
@@ -141,9 +140,9 @@ async def check_alerts(bot: Bot) -> int:
                         alert.telegram_id,
                         _alert_message(alert, price),
                     )
-                except Exception:  # noqa: BLE001 — один недоставленный алерт не фатален
+                except Exception:  # noqa: BLE001 — one undelivered alert is not fatal
                     log.warning(
-                        "Не удалось отправить алерт %s пользователю %s",
+                        "Failed to send alert %s to user %s",
                         alert.symbol,
                         alert.telegram_id,
                     )
@@ -152,18 +151,18 @@ async def check_alerts(bot: Bot) -> int:
                 fired += 1
         await session.commit()
     if fired:
-        log.info("Сработало алертов: %s", fired)
+        log.info("Alerts triggered: %s", fired)
     return fired
 
 
 async def run_alert_loop(bot: Bot, interval_seconds: int) -> None:
-    """Бесконечный цикл проверки алертов (фоновая задача бота)."""
-    log.info("Алерт-цикл запущен (интервал %s с)", interval_seconds)
+    """Infinite alert-checking loop (a background bot task)."""
+    log.info("Alert loop started (interval %s s)", interval_seconds)
     while True:
         try:
             await check_alerts(bot)
         except asyncio.CancelledError:
             raise
         except Exception:
-            log.exception("Ошибка в цикле проверки алертов")
+            log.exception("Error in the alert-checking loop")
         await asyncio.sleep(interval_seconds)

@@ -1,7 +1,7 @@
-"""Middleware: учёт пользователей в БД + общая статистика событий.
+"""Middleware: tracks users in the DB + overall event statistics.
 
-Пользователь upsert'ится в таблицу users при первом контакте.
-Бан проверяется здесь же: заблокированным пользователям бот не отвечает.
+A user is upserted into the users table on first contact.
+Bans are checked here as well: banned users get no response from the bot.
 """
 
 import logging
@@ -26,7 +26,7 @@ BAN_CACHE_SECONDS = 30
 
 @dataclass
 class BotStats:
-    """Счётчики событий бота (для /admin)."""
+    """Bot event counters (for /admin)."""
 
     started_at: float = field(default_factory=time.monotonic)
     messages: int = 0
@@ -40,14 +40,14 @@ class BotStats:
     def uptime_human(self) -> str:
         minutes, seconds = divmod(self.uptime_seconds, 60)
         hours, minutes = divmod(minutes, 60)
-        return f"{hours}ч {minutes}м {seconds}с"
+        return f"{hours}h {minutes}m {seconds}s"
 
     def top_commands(self, limit: int = 5) -> list[tuple[str, int]]:
         return self.commands.most_common(limit)
 
 
 class UsersMiddleware(BaseMiddleware):
-    """Считает события, записывает новых пользователей, фильтрует баны."""
+    """Counts events, records new users, filters bans."""
 
     def __init__(self, stats: BotStats) -> None:
         self.stats = stats
@@ -57,7 +57,7 @@ class UsersMiddleware(BaseMiddleware):
         self._banned: dict[int, float] = {}
 
     def invalidate(self, user_id: int) -> None:
-        """Сбрасывает кэш пользователя (например, после смены роли)."""
+        """Resets the user cache (e.g. after a role change)."""
         self._known.discard(user_id)
         self._roles.pop(user_id, None)
         self._langs.pop(user_id, None)
@@ -91,14 +91,14 @@ class UsersMiddleware(BaseMiddleware):
         data["lang"] = self._langs.get(user_id, get_settings().default_language)
         set_lang(data["lang"])
         if await self._is_banned(user_id):
-            log.info("Отклонён запрос забаненного пользователя id=%s", user_id)
+            log.info("Rejected request from banned user id=%s", user_id)
             return None
         return await handler(event, data)
 
     async def _track_user(
         self, user_id: int, event: TelegramObject
     ) -> tuple[str, bool]:
-        """Записывает нового пользователя в БД (один раз); возвращает (role, is_admin)."""
+        """Records a new user in the DB (once); returns (role, is_admin)."""
         settings = get_settings()
         super_admin = bool(settings.admin_id) and user_id == settings.admin_id
         if user_id in self._known:
@@ -138,11 +138,11 @@ class UsersMiddleware(BaseMiddleware):
         return role, super_admin or role == "admin"
 
     async def _is_banned(self, user_id: int) -> bool:
-        """Проверяет бан с коротким in-memory кэшем."""
+        """Checks the ban with a short in-memory cache."""
         now = time.monotonic()
         cached_at = self._banned.get(user_id)
         if cached_at is not None and now - cached_at < BAN_CACHE_SECONDS:
-            return True  # пока кэш жив — считаем забаненным
+            return True  # while the cache is alive — treat as banned
         async for session in get_session():
             result = await session.execute(
                 select(User.is_banned).where(User.telegram_id == user_id)

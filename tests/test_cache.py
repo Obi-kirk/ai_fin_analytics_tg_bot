@@ -1,4 +1,4 @@
-"""Тесты in-memory кэша."""
+"""Tests for the in-memory cache."""
 
 import asyncio
 

@@ -1,4 +1,4 @@
-"""Тесты i18n: словари, подстановка параметров, смена языка."""
+"""i18n tests: dictionaries, parameter substitution, language switching."""
 
 import pytest
 
@@ -16,15 +16,15 @@ class TestI18n:
     def test_supported_languages(self) -> None:
         assert SUPPORTED_LANGUAGES == ("ru", "en")
 
-    def test_default_language_is_ru(self) -> None:
-        assert get_lang() == "ru"
+    def test_default_language_is_en(self) -> None:
+        assert get_lang() == "en"
 
-    def test_t_returns_ru_by_default(self) -> None:
-        assert "Мой портфель" in t("portfolio.empty")
-
-    def test_switch_to_en(self) -> None:
-        set_lang("en")
+    def test_t_returns_en_by_default(self) -> None:
         assert "My portfolio" in t("portfolio.empty")
+
+    def test_switch_to_ru(self) -> None:
+        set_lang("ru")
+        assert "Мой портфель" in t("portfolio.empty")
 
     def test_format_params(self) -> None:
         text = t("fx.not_supported", code="ZZZ", currencies="USD, EUR")
@@ -40,9 +40,9 @@ class TestI18n:
         ru_keys = set(_STRINGS["ru"])
         en_keys = set(_STRINGS["en"])
         missing = ru_keys - en_keys
-        assert not missing, f"Нет EN-перевода для ключей: {missing}"
+        assert not missing, f"Missing EN translation for keys: {missing}"
         extra = en_keys - ru_keys
-        assert not extra, f"Лишние EN-ключи: {extra}"
+        assert not extra, f"Extra EN keys: {extra}"
 
     def test_all_strings_resolve_without_errors(self) -> None:
         from src.i18n import _STRINGS

@@ -1,4 +1,4 @@
-"""Меню бота: reply-клавиатура + inline-подменю с тикерами и кнопкой обновления."""
+"""Bot menu: reply keyboard + inline submenus with tickers and a refresh button."""
 
 import logging
 from collections.abc import Awaitable, Callable
@@ -26,9 +26,9 @@ from src.services.financial_api import ApiRateLimitError
 log = logging.getLogger(__name__)
 router = Router()
 
-# ---------------------------------------------------------------- reply-меню
+# ---------------------------------------------------------------- reply menu
 
-# Тексты reply-кнопок на всех языках (клавиатура в чате не обновляется сама)
+# Reply button texts in all languages (the in-chat keyboard is not updated automatically)
 _MENU_BUTTONS = {
     "fx": ("💱 Курсы", "💱 Rates"),
     "stock": ("📈 Акции", "📈 Stocks"),
@@ -38,14 +38,14 @@ _MENU_BUTTONS = {
     "help": ("❓ Помощь", "❓ Help"),
 }
 
-# Каждый текст кнопки -> вид (для любых языков, чтобы не ломать старую клавиатуру)
+# Each button text -> kind (for all languages, so old keyboards keep working)
 _MENU_TEXT_TO_KIND = {
     text: kind for kind, texts in _MENU_BUTTONS.items() for text in texts
 }
 
 
 def main_menu_kb() -> ReplyKeyboardMarkup:
-    """Reply-клавиатура главного меню на текущем языке."""
+    """Reply keyboard of the main menu in the current language."""
     t_fx = t("menu.btn.fx")
     t_stock = t("menu.btn.stock")
     t_crypto = t("menu.btn.crypto")
@@ -64,7 +64,7 @@ def main_menu_kb() -> ReplyKeyboardMarkup:
 
 MAIN_MENU = main_menu_kb()
 
-# ------------------------------------------------------- наборы для подменю
+# ------------------------------------------------------- submenu sets
 
 CURRENCIES_TOP10 = (
     "USD",
@@ -116,17 +116,17 @@ ANALYSE_GROUP_TITLES = {
 
 
 def analyse_group_title(group: str) -> str:
-    """Название категории AI-анализа на текущем языке."""
+    """AI analysis category name in the current language."""
     return t(f"menu.group.{group}")
 
 
 def menu_title(kind: str) -> str:
-    """Заголовок подменю на текущем языке."""
+    """Submenu title in the current language."""
     return t(f"menu.title.{kind}")
 
 
 def submenu_kb(kind: str) -> InlineKeyboardMarkup:
-    """Inline-клавиатура подменю: тикеры + строка индексов для акций."""
+    """Inline submenu keyboard: tickers + an index row for stocks."""
     builder = InlineKeyboardBuilder()
     if kind == "fx":
         builder.row(
@@ -168,13 +168,13 @@ def submenu_kb(kind: str) -> InlineKeyboardMarkup:
             ]
         )
     else:
-        raise ValueError(f"Неизвестное подменю: {kind}")
+        raise ValueError(f"Unknown submenu: {kind}")
     return builder.as_markup()
 
 
 def refresh_kb(cache_key: str) -> InlineKeyboardMarkup:
-    """Кнопки под карточкой цены: обновить, для акций — новости,
-    добавить в портфель, возврат в подменю.
+    """Buttons under the price card: refresh, for stocks — news,
+    add to portfolio, back to the submenu.
     """
     kind = cache_key.split(":", 1)[0]
     symbol = cache_key.split(":", 1)[1]
@@ -208,7 +208,7 @@ def refresh_kb(cache_key: str) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-# ------------------------------------------------------------ reply-обработчики
+# ------------------------------------------------------------ reply handlers
 
 
 @router.message(
@@ -230,7 +230,7 @@ def refresh_kb(cache_key: str) -> InlineKeyboardMarkup:
     )
 )
 async def on_menu_button(message: Message, cache: TTLCache) -> None:
-    """Реагирует на кнопки главного меню."""
+    """Handles the main menu buttons."""
     text = message.text or ""
     kind = _MENU_TEXT_TO_KIND[text]
     if kind == "help":
@@ -242,7 +242,7 @@ async def on_menu_button(message: Message, cache: TTLCache) -> None:
     await message.answer(menu_title(kind), reply_markup=submenu_kb(kind))
 
 
-# ------------------------------------------------------------ callback-обработчики
+# ------------------------------------------------------------ callback handlers
 
 
 async def _quote_and_edit(
@@ -254,13 +254,13 @@ async def _quote_and_edit(
     render: Callable[[object], str],
     render_arg: str | None = None,
 ) -> None:
-    """Берёт данные из кэша и редактирует сообщение с кнопкой обновления."""
+    """Fetches data from the cache and edits the message with a refresh button."""
     try:
         quote = await cache.get_or_set(cache_key, fetch, ttl)
     except ApiRateLimitError:
         await callback.answer(t("menu.api_limit"), show_alert=True)
         return
-    except Exception:  # noqa: BLE001 — граница внешнего API, ошибка уже залогирована
+    except Exception:  # noqa: BLE001 — external API boundary, error already logged
         await callback.answer(t("menu.fetch_failed"), show_alert=True)
         return
     text = render(quote) if render_arg is None else render(render_arg, quote)
@@ -272,7 +272,7 @@ async def _quote_and_edit(
 
 @router.callback_query(F.data.regexp(r"^fx:[A-Z]+$"))
 async def on_fx(callback: CallbackQuery, cache: TTLCache) -> None:
-    """Обрабатывает выбор валюты из подменю."""
+    """Handles the currency selection from the submenu."""
     code = callback.data.split(":", 1)[1]
     settings = get_settings()
     await _quote_and_edit(
@@ -287,7 +287,7 @@ async def on_fx(callback: CallbackQuery, cache: TTLCache) -> None:
 
 @router.callback_query(F.data.regexp(r"^stock:[A-Z0-9.\-^]+$"))
 async def on_stock(callback: CallbackQuery, cache: TTLCache) -> None:
-    """Обрабатывает выбор акции/индекса из подменю."""
+    """Handles the stock/index selection from the submenu."""
     raw = callback.data.split(":", 1)[1]
     symbol = resolve_stock_symbol(raw)
     settings = get_settings()
@@ -303,7 +303,7 @@ async def on_stock(callback: CallbackQuery, cache: TTLCache) -> None:
 
 @router.callback_query(F.data.regexp(r"^crypto:[A-Z]+$"))
 async def on_crypto(callback: CallbackQuery, cache: TTLCache) -> None:
-    """Обрабатывает выбор монеты из подменю."""
+    """Handles the coin selection from the submenu."""
     symbol = callback.data.split(":", 1)[1]
     settings = get_settings()
     await _quote_and_edit(
@@ -319,7 +319,7 @@ async def on_crypto(callback: CallbackQuery, cache: TTLCache) -> None:
 
 @router.callback_query(F.data.regexp(r"^submenu:(fx|stock|crypto|analyse)$"))
 async def on_submenu(callback: CallbackQuery) -> None:
-    """Возвращает сообщение к подменю выбора (кнопка «↩️ Меню»)."""
+    """Returns the message to the selection submenu (the "Back" button)."""
     kind = callback.data.split(":", 1)[1]
     await callback.message.edit_text(menu_title(kind), reply_markup=submenu_kb(kind))
     await callback.answer()
@@ -327,7 +327,7 @@ async def on_submenu(callback: CallbackQuery) -> None:
 
 @router.callback_query(F.data.regexp(r"^analyse_cat:(stock|index|crypto)$"))
 async def on_analyse_cat(callback: CallbackQuery) -> None:
-    """Список активов категории AI-анализа."""
+    """Asset list of the AI analysis category."""
     group = callback.data.split(":", 1)[1]
     builder = InlineKeyboardBuilder()
     symbols = ANALYSE_GROUPS[group]
@@ -352,7 +352,7 @@ async def on_analyse_cat(callback: CallbackQuery) -> None:
 
 @router.callback_query(F.data.startswith("refresh:"))
 async def on_refresh(callback: CallbackQuery, cache: TTLCache) -> None:
-    """Сбрасывает кэш записи и перезапрашивает данные."""
+    """Clears the cache entry and re-fetches the data."""
     cache_key = callback.data.split(":", 1)[1]
     await cache.delete(cache_key)
     if cache_key.startswith("fx:"):

@@ -1,7 +1,7 @@
-"""Обработчик команды /start — приветствие, меню и дисклеймер.
+"""Handler for the /start command — greeting, menu and disclaimer.
 
-Дисклеймер показывается отдельным сообщением при каждом /start:
-пользователь явно подтверждает осведомлённость перед использованием.
+The disclaimer is shown as a separate message on every /start:
+the user explicitly acknowledges it before using the bot.
 """
 
 from aiogram import Router
@@ -16,6 +16,6 @@ router = Router()
 
 @router.message(CommandStart())
 async def cmd_start(message: Message) -> None:
-    """Показывает приветствие, меню и дисклеймер."""
+    """Shows the greeting, menu and disclaimer."""
     await message.answer(t("start.help_text"), reply_markup=MAIN_MENU)
     await message.answer(t("start.disclaimer"))

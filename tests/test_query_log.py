@@ -1,4 +1,4 @@
-"""Тесты middleware истории запросов: запись в БД (SQLite, без сети)."""
+"""Query history middleware tests: writing to DB (SQLite, no network)."""
 
 from datetime import datetime, timezone
 
@@ -18,7 +18,7 @@ class _FakeSettings:
 
 @pytest.fixture
 async def sqlite_db(monkeypatch: pytest.MonkeyPatch):
-    """Подменяет engine на файловый SQLite и создаёт таблицы."""
+    """Replaces the engine with a file-based SQLite and creates tables."""
     monkeypatch.setattr(db_module, "get_settings", lambda: _FakeSettings())
     await db_module.close_db()
     await db_module.create_tables()
@@ -89,7 +89,7 @@ class TestQueryLogMiddleware:
         assert len(logs[0].payload) <= 300
 
     async def test_handler_still_runs_on_db_failure(self, sqlite_db) -> None:
-        """Сбой записи не должен ронять обработчик."""
+        """A write failure must not crash the handler."""
         called = False
 
         async def handler(event, data):
@@ -97,7 +97,7 @@ class TestQueryLogMiddleware:
             called = True
             return "ok"
 
-        # Ломаем сессию: закрываем БД перед вызовом middleware
+        # Break the session: close the DB before calling the middleware
         await db_module.close_db()
         result = await QueryLogMiddleware()(handler, _message("/rate USD"), {})
         assert result == "ok"

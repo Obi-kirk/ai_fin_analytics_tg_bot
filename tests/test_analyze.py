@@ -1,4 +1,4 @@
-"""Тесты AI-анализа: распознавание актива, контекст с новостями/трендами (без сети)."""
+"""AI analysis tests: asset detection, context with news/trends (no network)."""
 
 import pytest
 
@@ -16,8 +16,16 @@ from src.services.cache import TTLCache
 from src.services.financial_api import StockQuote
 
 
+@pytest.fixture(autouse=True)
+def _use_ru():
+    """These tests check Russian text — set the language explicitly."""
+    from src.i18n import set_lang
+
+    set_lang("ru")
+
+
 class _FakeStockFetcher:
-    """Подменяет fetch_stock/fetch_crypto в модуле analyze."""
+    """Replaces fetch_stock/fetch_crypto in the analyze module."""
 
     def __init__(self, quote: StockQuote | None, raises: type[Exception] | None = None):
         self.quote = quote
@@ -30,7 +38,7 @@ class _FakeStockFetcher:
 
 
 class _FakeFetcher:
-    """Возвращает заготовку для любого доп. запроса (профиль, новости и т.д.)."""
+    """Returns a stub for any extra request (profile, news, etc.)."""
 
     def __init__(self, value, raises: type[Exception] | None = None):
         self.value = value
@@ -49,7 +57,7 @@ def cache() -> TTLCache:
 
 @pytest.fixture
 def fake_fetchers(monkeypatch: pytest.MonkeyPatch, cache: TTLCache) -> None:
-    """Успешные ответы для всех внешних запросов."""
+    """Successful responses for all external requests."""
     monkeypatch.setattr(
         module,
         "fetch_stock",
@@ -115,13 +123,13 @@ class TestStockContextExtra:
         assert "Apple Inc (Technology)" in ctx
         assert "designs" in ctx
         assert "Сенсация" in ctx
-        assert "Четвёртая" not in ctx  # лимит 3 новости
+        assert "Четвёртая" not in ctx  # limit of 3 news items
         assert "Последние новости" in ctx
 
     async def test_fallback_when_extra_fails(
         self, fake_fetchers, cache, monkeypatch
     ) -> None:
-        """Сбой профиля/новостей не роняет анализ — остаётся котировка."""
+        """Profile/news failure does not break the analysis — the quote remains."""
         monkeypatch.setattr(
             module, "_fetch_company_profile", _FakeFetcher(None, raises=RuntimeError)
         )
@@ -151,7 +159,7 @@ class TestCryptoContextExtra:
                 }
             ),
         )
-        # 100 цен: первая 100, последняя 130 → тренд 7д/30д из шага истории
+        # 100 prices: first 100, last 130 → 7d/30d trend from the history step
         prices = [100.0 + i * 0.3 for i in range(100)]
         monkeypatch.setattr(module, "_fetch_price_history", _FakeFetcher(prices))
         ctx = await _crypto_context("BTC", cache)

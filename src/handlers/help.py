@@ -1,4 +1,4 @@
-"""Обработчик команды /help и кнопки «Помощь»."""
+"""Handler for the /help command and the "Help" button."""
 
 from aiogram import Router
 from aiogram.filters import Command
@@ -12,5 +12,5 @@ router = Router()
 
 @router.message(Command("help"))
 async def cmd_help(message: Message) -> None:
-    """Показывает справку и меню."""
+    """Shows the help text and menu."""
     await message.answer(t("start.help_text"), reply_markup=MAIN_MENU)

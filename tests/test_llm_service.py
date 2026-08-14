@@ -1,6 +1,6 @@
-"""Тесты LLM-сервиса: санитайзинг от промпт-инъекций, сборка сообщений.
+"""LLM service tests: prompt-injection sanitization, message building.
 
-Без сети: проверяется только очистка ввода и структура промпта.
+No network: only input cleaning and prompt structure are tested.
 """
 
 import pytest
@@ -12,6 +12,14 @@ from src.services.llm_service import (
     markdown_to_html,
     sanitize_user_text,
 )
+
+
+@pytest.fixture(autouse=True)
+def _use_ru():
+    """These tests check Russian text — set the language explicitly."""
+    from src.i18n import set_lang
+
+    set_lang("ru")
 
 
 class TestMarkdownToHtml:

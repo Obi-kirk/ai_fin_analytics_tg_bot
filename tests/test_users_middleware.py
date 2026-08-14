@@ -1,4 +1,4 @@
-"""Тесты UsersMiddleware: статистика, учёт пользователей, баны (SQLite, без сети)."""
+"""UsersMiddleware tests: stats, user tracking, bans (SQLite, no network)."""
 
 from datetime import datetime, timezone
 
@@ -18,12 +18,12 @@ class _FakeSettings:
 
 @pytest.fixture
 async def sqlite_db(monkeypatch: pytest.MonkeyPatch):
-    """Подменяет engine на чистый файловый SQLite и создаёт таблицы."""
+    """Replaces the engine with a clean file-based SQLite and creates tables."""
     import os
 
     monkeypatch.setattr(db_module, "get_settings", lambda: _FakeSettings())
     await db_module.close_db()
-    # create_all не меняет существующие таблицы — удаляем файл БД от прошлых прогонов
+    # create_all does not change existing tables — remove the DB file from previous runs
     db_path = _FakeSettings().database_url.replace("sqlite+aiosqlite:///", "")
     if db_path != ":memory:" and os.path.exists(db_path):
         os.remove(db_path)
@@ -82,8 +82,8 @@ class TestBotStats:
 
     def test_uptime_human(self) -> None:
         stats = BotStats()
-        stats.started_at -= 3661.0  # час + минута + секунда назад
-        assert stats.uptime_human() == "1ч 1м 1с"
+        stats.started_at -= 3661.0  # an hour + minute + second ago
+        assert stats.uptime_human() == "1h 1m 1s"
 
 
 class TestUsersMiddleware:

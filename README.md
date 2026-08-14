@@ -1,165 +1,169 @@
-# 🤖 FinMind — AI-финансовый Telegram-бот
+# 🤖 FinMind — AI Financial Telegram Bot
 
-**FinMind** — Telegram-бот для финансовой аналитики: курсы валют ЦБ РФ, акции и индексы (Finnhub), криптовалюты (CoinGecko), AI-анализ активов, портфель, алерты цен и ежедневный дайджест.
+**FinMind** is a Telegram bot for financial analytics: CBR exchange rates, stocks and indexes (Finnhub), cryptocurrencies (CoinGecko), AI-powered asset analysis, portfolio tracking, price alerts, and a daily digest.
 
-> ⚠️ **Это тестовый / образовательный проект.** Он не является финансовым сервисом и не предоставляет инвестиционных рекомендаций. Подробнее — в разделе [Дисклеймер](#-дисклеймер).
-
----
-
-## ⚠️ Дисклеймер
-
-Бот создан **исключительно в образовательных и демонстрационных целях**. Вся информация, включая анализ и прогнозы, сгенерированные AI, носит справочный характер и **не является финансовой консультацией, инвестиционной рекомендацией или призывом к действию**.
-
-- 🔹 **Риски.** Инвестиции в финансовые инструменты сопряжены с высоким риском потери капитала. Историческая доходность не гарантирует будущих результатов. AI-модель может допускать ошибки, данные могут задерживаться или быть неточными.
-- 🔹 **Ответственность.** Вы принимаете решения о финансовых операциях самостоятельно и несёте полную ответственность за все риски. Разработчик не несёт ответственности за любые убытки или упущенную выгоду, возникшие в результате использования бота.
-- 🔹 **Источники данных.** Данные приходят через открытые API (ЦБ РФ, Finnhub, CoinGecko) и могут иметь задержки; актуальность не гарантируется.
-
-Продолжая использовать бота, вы подтверждаете, что ознакомлены с этим предупреждением и принимаете все риски.
+> ⚠️ **This is a demo / educational project.** It is not a financial service and does not provide investment advice. See the [Disclaimer](#-disclaimer) for details.
 
 ---
 
-## ✨ Возможности
+## ⚠️ Disclaimer
 
-| Раздел | Что умеет |
+This bot was created **exclusively for educational and demonstration purposes**. All information, including AI-generated analysis and forecasts, is for reference only and **is not financial advice, an investment recommendation, or a call to action**.
+
+- 🔹 **Risks.** Investing in financial instruments involves a high risk of losing capital. Past performance does not guarantee future results. The AI model may make mistakes; data may be delayed or inaccurate.
+- 🔹 **Liability.** You make financial decisions on your own and bear full responsibility for all risks. The developer is not liable for any losses or lost profits resulting from the use of this bot.
+- 🔹 **Data sources.** Data comes through open APIs (CBR, Finnhub, CoinGecko) and may be delayed; up-to-dateness is not guaranteed.
+
+By continuing to use the bot, you confirm that you have read this notice and accept all risks.
+
+---
+
+## ✨ Features
+
+| Section | What it does |
 |---|---|
-| 💱 **Валюты** | Курсы ЦБ РФ (12 валют, `/rate` — все сразу), конвертер с криптой `/convert` |
-| 📈 **Акции и индексы** | Цены акций и индексов (SPX, DJI, VIX → ETF-аналоги), новости `/news` |
-| 🪙 **Крипта** | Цены, тренды `/trending`, топ `/top`, PNG-график цены за 30 дней `/chart` |
-| 🤖 **AI-анализ** | `/analyze` — разбор актива через LLM (котировки, профиль, новости, капитализация, тренд) |
-| 📁 **Портфель** | Учёт активов, количество и стоимость, сумма баланса, удаление с подтверждением |
-| 🔔 **Алерты** | Абсолютные («выше 70 000») и относительные («+5% от текущей») |
-| 📰 **Дайджест** | Ежедневная сводка в заданное время + персональный набор активов |
-| 🛡️ **Безопасность** | Роли (RBAC), баны, история запросов, защита от промпт-инъекций, маскировка PII |
+| 💱 **Currencies** | CBR exchange rates (12 currencies, `/rate` — all at once), converter with crypto `/convert` |
+| 📈 **Stocks & indexes** | Stock and index prices (SPX, DJI, VIX → ETF proxies), news `/news` |
+| 🪙 **Crypto** | Prices, trends `/trending`, top `/top`, 30-day PNG price chart `/chart` |
+| 🤖 **AI analysis** | `/analyze` — asset breakdown via LLM (quotes, profile, news, market cap, trend) |
+| 📁 **Portfolio** | Asset tracking, quantity and value, total balance, remove with confirmation |
+| 🔔 **Alerts** | Absolute (“above 70,000”) and relative (“+5% from current”) |
+| 📰 **Digest** | Daily summary at a scheduled time + personal asset set |
+| 🌐 **i18n** | Russian and English UI (`/lang` to switch, `DEFAULT_LANGUAGE` in `.env`) |
+| 🛡️ **Security** | Roles (RBAC), bans, query history, prompt-injection protection, PII masking |
 
 ---
 
-## 🚀 Быстрый старт
+## 🚀 Quick start
 
 ```bash
-# 1. Клонировать репозиторий
+# 1. Clone the repository
 git clone https://github.com/Obi-kirk/ai_fin_analytics_tg_bot.git
 cd ai_fin_analytics_tg_bot
 
-# 2. Создать и активировать виртуальное окружение
+# 2. Create and activate a virtual environment
 python -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
 
-# 3. Установить зависимости
+# 3. Install dependencies
 pip install -r requirements.txt
 
-# 4. Создать .env из шаблона и заполнить секреты
+# 4. Create .env from the template and fill in the secrets
 cp .env.example .env
 
-# 5. Запустить бота (polling)
+# 5. Run the bot (polling)
 python -m src.main
 ```
 
 ---
 
-## ⚙️ Конфигурация (`.env`)
+## ⚙️ Configuration (`.env`)
 
-| Переменная | Обязательна | Описание |
+| Variable | Required | Description |
 |---|---|---|
-| `TELEGRAM_BOT_TOKEN` | ✅ | Токен бота от [@BotFather](https://t.me/BotFather) |
+| `TELEGRAM_BOT_TOKEN` | ✅ | Bot token from [@BotFather](https://t.me/BotFather) |
 | `DATABASE_URL` | ✅ | `postgresql+asyncpg://user:pass@localhost:5432/dbname` |
-| `FINNHUB_API_KEY` | ✅ | Ключ [finnhub.io](https://finnhub.io) (акции, 60 req/мин) |
-| `COINGECKO_API_KEY` | ❌ | Ключ CoinGecko (демо: 100 req/мин) |
-| `OPENROUTER_API_KEY` | ❌* | Ключ [openrouter.ai](https://openrouter.ai) — AI-анализ |
-| `ADMIN_ID` | ❌ | Telegram user_id администратора (админские команды) |
-| `OPENROUTER_MODEL` | ❌ | Модель для AI-анализа (по умолчанию `nvidia/nemotron-3-nano-30b-a3b:free`) |
+| `FINNHUB_API_KEY` | ✅ | [finnhub.io](https://finnhub.io) key (stocks, 60 req/min) |
+| `COINGECKO_API_KEY` | ❌ | CoinGecko key (demo: 100 req/min) |
+| `OPENROUTER_API_KEY` | ❌* | [openrouter.ai](https://openrouter.ai) key — AI analysis |
+| `ADMIN_ID` | ❌ | Telegram user_id of the admin (admin commands) |
+| `OPENROUTER_MODEL` | ❌ | Model for AI analysis (default `nvidia/nemotron-3-nano-30b-a3b:free`) |
+| `DEFAULT_LANGUAGE` | ❌ | Bot language: `en` (default) or `ru` |
 
-\* Без ключей AI-анализа и крипты бот работает, но соответствующие команды будут недоступны.
+\* Without AI-analysis and crypto keys the bot still works, but the corresponding commands are unavailable.
 
-> **Важно:** `.env` содержит секреты и **не должен коммититься** в репозиторий. Он уже в `.gitignore`.
+> **Important:** `.env` contains secrets and **must not be committed** to the repository. It is already in `.gitignore`.
 
 ---
 
-## ⌨️ Команды
+## ⌨️ Commands
 
-**Пользовательские:**
-`/start` `/rate` `/convert` `/stock` `/crypto` `/chart` `/trending` `/top` `/news` `/analyze` `/portfolio` `/alert` `/alerts` `/digest` `/myrole` `/help`
+**User commands:**
+`/start` `/rate` `/convert` `/stock` `/crypto` `/chart` `/trending` `/top` `/news` `/analyze` `/portfolio` `/alert` `/alerts` `/digest` `/myrole` `/lang` `/help`
 
-**Админские** (только для `ADMIN_ID`):
+**Admin commands** (only for `ADMIN_ID`):
 `/admin` `/users` `/broadcast` `/ban` `/unban` `/cachestats` `/recent` `/setrole`
 
-Примеры:
+Examples:
 ```text
-/rate              — все валюты ЦБ
+/rate              — all CBR rates
 /convert 100 USD RUB
-/stock SPX         — индекс S&P 500 (через ETF SPY)
+/stock SPX         — S&P 500 index (via SPY ETF)
 /crypto BTC
-/chart BTC         — PNG-график за 30 дней
-/analyze BTC       — AI-анализ
-/alert BTC 70000   — алерт «выше 70 000»
-/digest            — дневной дайджест
+/chart BTC         — 30-day PNG chart
+/analyze BTC       — AI analysis
+/alert BTC 70000   — alert "above 70,000"
+/digest            — daily digest
 ```
 
 ---
 
-## 🧠 AI-анализ
+## 🧠 AI analysis
 
-`/analyze` отправляет в LLM контекст актива: котировку, профиль компании, свежие новости, капитализацию, тренд за 7/30 дней. Ответ форматируется в HTML и сопровождается дисклеймером.
+`/analyze` sends the asset context to an LLM: quote, company profile, latest news, market cap, 7/30-day trend. The answer is formatted as HTML and followed by a disclaimer.
 
-Безопасность контекста:
-- пользовательский ввод санитизируется (защита от промпт-инъекций);
-- контекст урезается (макс. 3 новости, лимиты длины);
-- портфель и количество активов **не передаются** в LLM.
+Context security:
+- user input is sanitized (prompt-injection protection);
+- context is truncated (max 3 news items, length limits);
+- portfolio and asset quantities are **never sent** to the LLM.
 
 ---
 
-## 🏗️ Архитектура
+## 🏗️ Architecture
 
 ```
 src/
-├── main.py               # Точка входа: polling, роутеры, middleware, DI
+├── main.py               # Entry point: polling, routers, middleware, DI
 ├── handlers/             # /start /help /menu /rate /stock /crypto /analyze
-│                         # /portfolio (портфель+алерты) /digest /admin /errors
+│                         # /portfolio (portfolio+alerts) /digest /admin /lang /errors
 ├── services/
-│   ├── financial_api.py  # Клиенты ЦБ РФ, Finnhub, CoinGecko
-│   ├── cache.py          # TTLCache (in-memory, с GC)
-│   ├── alerts.py         # Фоновый цикл проверки алертов
-│   ├── digest.py         # Сборка и рассылка дневного дайджеста
-│   └── llm_service.py    # LLMClient (OpenRouter), санитизация
-├── database/             # SQLAlchemy async (PostgreSQL), модели
-├── middleware/           # Троттлинг, upsert юзеров, журнал запросов
+│   ├── financial_api.py  # CBR, Finnhub, CoinGecko clients
+│   ├── cache.py          # TTLCache (in-memory, with GC)
+│   ├── alerts.py         # Background price-alert loop
+│   ├── digest.py         # Daily digest builder and sender
+│   └── llm_service.py    # LLMClient (OpenRouter), sanitization
+├── i18n.py               # ru/en string dictionaries + t()
+├── database/             # SQLAlchemy async (PostgreSQL), models
+├── middleware/           # Throttling, user upsert, query log
 ├── config/               # pydantic-settings
-└── utils/                # Маскировка PII в логах
+└── utils/                # PII masking in logs
 ```
 
-Ключевые решения:
-- **PostgreSQL + SQLAlchemy 2 (async)** — модели `User`, `PortfolioItem`, `Alert`, `QueryLog`, `DigestSubscription`, `DigestAsset`;
-- **TTLCache** — курсы валют 1 час, акции/крипта 10 минут, фундаментальные данные 30 минут;
-- **Алерты** — батч-запрос CoinGecko на весь пул (экономия лимита), интервал 30 минут;
-- **Индексы** — Finnhub не отдаёт `^GSPC`/`^DJI`/`^VIX`, поэтому используются ETF-аналоги (SPX→SPY, DJI→DIA, VIX→VIXY).
+Key decisions:
+- **PostgreSQL + SQLAlchemy 2 (async)** — models `User`, `PortfolioItem`, `Alert`, `QueryLog`, `DigestSubscription`, `DigestAsset`;
+- **TTLCache** — FX rates 1 hour, stocks/crypto 10 minutes, fundamental data 30 minutes;
+- **Alerts** — one CoinGecko batch request for the whole pool (saves the free limit), 30-minute interval;
+- **Indexes** — Finnhub does not return `^GSPC`/`^DJI`/`^VIX`, so ETF proxies are used (SPX→SPY, DJI→DIA, VIX→VIXY);
+- **i18n** — every user-facing string goes through `t()` with a per-user language (`users.language`).
 
 ---
 
-## 🧪 Тесты
+## 🧪 Tests
 
 ```bash
-pytest tests/ -v            # 224 теста (без сети)
-black src/ tests/           # формат
+pytest tests/ -v            # 232 tests (no network)
+black src/ tests/           # formatting
 isort --profile black src/ tests/
-ruff check src/ tests/      # линт
+ruff check src/ tests/      # lint
 ```
 
 ---
 
-## 🛡️ Безопасность
+## 🛡️ Security
 
-- Секреты — только в `.env`, файл в `.gitignore`;
-- Белый список исходящих доменов (telegram, cbr, finnhub, coingecko, openrouter);
-- Промпт-инъекции экранируются, подозрительные конструкции блокируются;
-- RBAC: роли `user` / `admin`, админские команды только для владельца;
-- Подтверждение критических действий (удаление, рассылка);
-- Логирование без PII: имена и контакты маскируются (`[REDACTED]`).
+- Secrets live only in `.env`, the file is in `.gitignore`;
+- Outgoing domains are white-listed (telegram, cbr, finnhub, coingecko, openrouter);
+- Prompt injections are sanitized, suspicious patterns are blocked;
+- RBAC: `user` / `admin` roles, admin commands are owner-only;
+- Critical actions require confirmation (deletion, broadcast);
+- Logging without PII: names and contacts are masked (`[REDACTED]`).
 
 ---
 
-## 📚 Технологии
+## 📚 Tech stack
 
 Python 3.14 · aiogram 3 · SQLAlchemy 2 (async) · PostgreSQL · aiohttp · pydantic-settings · matplotlib · pytest
 
 ---
 
-*Проект создан для изучения и демонстрации. Не инвестируйте на основе информации из этого бота.*
+*Built for learning and demonstration. Do not invest based on information from this bot.*

@@ -1,7 +1,7 @@
-"""LLM-агент: генерация финансового анализа через OpenRouter (бесплатные модели).
+"""LLM agent: financial analysis generation via OpenRouter (free models).
 
-Безопасность (AGENTS.md п.2): весь пользовательский ввод проходит через
-sanitize_user_text() — подозрительные конструкции удаляются до передачи в LLM.
+Security (AGENTS.md item 2): all user input passes through
+sanitize_user_text() — suspicious constructs are removed before the LLM call.
 """
 
 import html
@@ -16,13 +16,13 @@ from src.services.financial_api import _check_domain
 
 log = logging.getLogger(__name__)
 
-# Обрезаем ввод, чтобы не раздувать контекст и не тащить мусор (DoS)
+# Truncate input so we don't bloat the context or drag in junk (DoS)
 MAX_QUERY_LENGTH = 2000
 MAX_CONTEXT_LENGTH = 3000
 
 API_URL = "https://openrouter.ai/api/v1/chat/completions"
 
-# Паттерны попыток промпт-инъекции (AGENTS.md п.2)
+# Patterns of prompt-injection attempts (AGENTS.md item 2)
 _INJECTION_PATTERNS = (
     re.compile(r"ignore\s+(all\s+)?previous\s+instructions", re.IGNORECASE),
     re.compile(
@@ -37,15 +37,15 @@ _INJECTION_PATTERNS = (
 
 
 def _system_prompt() -> str:
-    """Системный промпт LLM на текущем языке бота."""
+    """System prompt for the LLM in the bot's current language."""
     return t("llm.system_prompt")
 
 
 def sanitize_user_text(text: str) -> str:
-    """Очищает пользовательский ввод от попыток промпт-инъекций.
+    """Cleans user input of prompt-injection attempts.
 
-    Возвращает обрезанный текст: удаляет подозрительные фрагменты и
-    ограничивает длину. Пустой результат после очистки не передаётся в LLM.
+    Returns truncated text: removes suspicious fragments and
+    limits the length. An empty result is not passed to the LLM.
     """
     cleaned = text.strip()
     if not cleaned:
@@ -57,26 +57,26 @@ def sanitize_user_text(text: str) -> str:
 
 
 def markdown_to_html(text: str) -> str:
-    """Конвертирует базовую markdown-разметку ответа LLM в HTML Telegram.
+    """Converts the LLM reply's basic markdown into Telegram HTML.
 
-    Сначала экранируется весь текст (html.escape), затем markdown-акценты
-    заменяются тегами — произвольный HTML от модели не проходит.
+    First the whole text is escaped (html.escape), then markdown accents
+    are replaced with tags — arbitrary HTML from the model never passes.
     """
     escaped = html.escape(text)
     escaped = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", escaped)
     escaped = re.sub(r"(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)", r"<i>\1</i>", escaped)
     escaped = re.sub(r"`([^`]+)`", r"<code>\1</code>", escaped)
     escaped = re.sub(r"^#{1,6}\s+", "", escaped, flags=re.MULTILINE)
-    # Списки markdown -> маркеры (Telegram HTML не знает <ul>)
+    # Markdown lists -> markers (Telegram HTML doesn't know <ul>)
     escaped = re.sub(r"^[-*]\s+", "• ", escaped, flags=re.MULTILINE)
     return escaped
 
 
 def build_messages(query: str, context: str) -> list[dict[str, str]]:
-    """Собирает сообщения для LLM: системный промпт + данные + вопрос.
+    """Builds messages for the LLM: system prompt + data + question.
 
-    context — проверенные данные из API (не пользовательский ввод),
-    query — уже очищенный пользовательский запрос.
+    context — verified data from the APIs (not user input),
+    query — already sanitized user request.
     """
     context_limited = context[:MAX_CONTEXT_LENGTH]
     return [
@@ -89,9 +89,9 @@ def build_messages(query: str, context: str) -> list[dict[str, str]]:
 
 
 class LLMClient:
-    """Клиент OpenRouter (OpenAI-совместимый /chat/completions).
+    """OpenRouter client (OpenAI-compatible /chat/completions).
 
-    Использует бесплатную модель по умолчанию (openrouter_model из .env).
+    Uses a free model by default (openrouter_model from .env).
     """
 
     def __init__(
@@ -105,13 +105,15 @@ class LLMClient:
         self._max_tokens = max_tokens
 
     async def analyze(self, query: str, context: str) -> str:
-        """Отправляет запрос и возвращает текст анализа.
+        """Sends the request and returns the analysis text.
 
-        У LLM-провайдеров время ответа больше, чем у котировок,
-        поэтому свой таймаут: 60 секунд.
+        LLM providers respond slower than quote APIs,
+        so a dedicated timeout is used: 60 seconds.
         """
         if not self._api_key:
-            raise RuntimeError("OpenRouter API ключ не настроен (OPENROUTER_API_KEY)")
+            raise RuntimeError(
+                "OpenRouter API key is not configured (OPENROUTER_API_KEY)"
+            )
 
         settings = get_settings()
         model = self._model or settings.openrouter_model
@@ -131,19 +133,20 @@ class LLMClient:
             API_URL, json=payload, headers=headers
         ) as resp:
             if resp.status == 429:
-                raise RuntimeError("OpenRouter: превышен лимит бесплатных запросов")
+                raise RuntimeError("OpenRouter: free request rate limit exceeded")
             if resp.status != 200:
                 body = await resp.text()
-                log.error("OpenRouter ответил %s: %.200s", resp.status, body)
-                raise RuntimeError(f"OpenRouter ответил {resp.status}")
+                log.error("OpenRouter responded %s: %.200s", resp.status, body)
+                raise RuntimeError(f"OpenRouter responded {resp.status}")
             data = await resp.json()
         try:
             choice = data["choices"][0]
             if choice.get("finish_reason") == "length":
                 log.warning(
-                    "Ответ модели обрезан по лимиту max_tokens (%s)", self._max_tokens
+                    "Model reply truncated by the max_tokens limit (%s)",
+                    self._max_tokens,
                 )
             return choice["message"]["content"].strip()
         except (KeyError, IndexError, TypeError):
-            log.error("Некорректный ответ OpenRouter: %.200s", str(data)[:200])
-            raise RuntimeError("OpenRouter вернул некорректный ответ")
+            log.error("Malformed OpenRouter response: %.200s", str(data)[:200])
+            raise RuntimeError("OpenRouter returned a malformed response")

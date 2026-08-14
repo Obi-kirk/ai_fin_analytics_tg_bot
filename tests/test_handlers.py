@@ -1,4 +1,4 @@
-"""Тесты хендлеров: валидация ввода, алиасы индексов, форматирование ответов."""
+"""Handler tests: input validation, index aliases, response formatting."""
 
 import pytest
 
@@ -65,6 +65,14 @@ def test_index_aliases() -> None:
     assert INDEX_ALIASES.get(unknown, unknown) == "AAPL"
 
 
+@pytest.fixture(autouse=True)
+def _use_ru():
+    """These tests check Russian text — set the language explicitly."""
+    from src.i18n import set_lang
+
+    set_lang("ru")
+
+
 def test_format_fx() -> None:
     text = format_fx(FxQuote(code="USD", name="Доллар США", value=82.6145, nominal=1))
     assert "Доллар США" in text
@@ -129,8 +137,8 @@ class TestConvert:
     def test_convert_kb_swap(self) -> None:
         kb = convert_kb(100.0, "USD", "RUB")
         data = [b.callback_data for row in kb.inline_keyboard for b in row]
-        assert "conv:swap|100.0|RUB|USD" in data  # «Поменять» меняет пару местами
-        assert "conv:start" in data  # «Ещё раз» — новый диалог
+        assert "conv:swap|100.0|RUB|USD" in data  # "Swap" exchanges the pair
+        assert "conv:start" in data  # "Again" starts a new dialog
 
     def test_convert_currencies_include_rub(self) -> None:
         assert "RUB" in CONVERT_CURRENCIES
@@ -141,7 +149,7 @@ class TestConvert:
         assert "RUB" in CONVERT_OPTIONS
 
     def test_convert_currencies_order(self) -> None:
-        # порядок кнопок: RUB первым, дальше по популярности для пользователя
+        # button order: RUB first, then by popularity for the user
         assert CONVERT_CURRENCIES == (
             "RUB",
             "USD",
@@ -156,7 +164,7 @@ class TestConvert:
         )
 
     def test_rate_currencies_extended(self) -> None:
-        # дирхам/бат/донг должны быть доступны (были в меню, но отклонялись)
+        # AED/THB/VND must be available (were in the menu but were rejected)
         assert {
             "AED",
             "TRY",
@@ -170,7 +178,7 @@ class TestConvert:
     def test_news_kb(self) -> None:
         kb = news_kb("AAPL")
         data = [b.callback_data for row in kb.inline_keyboard for b in row]
-        assert "stock:AAPL" in data  # назад к котировке
+        assert "stock:AAPL" in data  # back to the quote
         assert "submenu:stock" in data
 
 
@@ -183,7 +191,7 @@ def test_format_stock_sign() -> None:
 
 
 def test_format_stock_display() -> None:
-    # индекс показывается исходным алиасом (VIX), а не ETF-тикером (VIXY)
+    # the index is displayed with the original alias (VIX), not the ETF ticker (VIXY)
     text = format_stock(
         StockQuote(symbol="VIXY", price=18.77, change_percent=-2.75),
         display="VIX",
@@ -204,12 +212,12 @@ def test_build_chart_png() -> None:
     from src.handlers.crypto import build_chart_png
 
     png = build_chart_png("BTC", [100.0, 105.0, 103.0, 110.0])
-    assert png[:8] == b"\x89PNG\r\n\x1a\n"  # сигнатура PNG
+    assert png[:8] == b"\x89PNG\r\n\x1a\n"  # PNG signature
     assert len(png) > 1000
 
 
 async def test_fetch_crypto_uses_alias(monkeypatch) -> None:
-    """SOL запрашивает CoinGecko id solana (не sol)."""
+    """SOL requests CoinGecko id solana (not sol)."""
 
     class FakeGecko:
         def __init__(self, api_key: str | None = None) -> None:
@@ -244,7 +252,7 @@ class TestTrending:
         ]
         text = format_trending(coins)
         assert "Coin1" in text
-        assert "Coin14" not in text  # показываем только топ-10
+        assert "Coin14" not in text  # only the top 10 is shown
 
 
 class TestTop:

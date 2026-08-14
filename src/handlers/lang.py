@@ -1,4 +1,4 @@
-"""Команда /lang — выбор языка бота (ru/en), сохраняется в users.language."""
+"""The /lang command — bot language selection (ru/en), saved to users.language."""
 
 from aiogram import F, Router
 from aiogram.filters import Command
@@ -21,7 +21,7 @@ _LANG_FLAGS = {"ru": "🇷🇺", "en": "🇬🇧"}
 
 
 def lang_kb() -> InlineKeyboardMarkup:
-    """Кнопки выбора языка."""
+    """Language selection buttons."""
     builder = InlineKeyboardBuilder()
     builder.row(
         *[
@@ -37,13 +37,13 @@ def lang_kb() -> InlineKeyboardMarkup:
 
 @router.message(Command("lang"))
 async def cmd_lang(message: Message) -> None:
-    """Показывает выбор языка."""
+    """Shows the language selection."""
     await message.answer(t("lang.prompt"), reply_markup=lang_kb())
 
 
 @router.callback_query(F.data.regexp(r"^lang:(ru|en)$"))
 async def on_lang_choose(callback: CallbackQuery) -> None:
-    """Сохраняет выбранный язык и подтверждает."""
+    """Saves the selected language and confirms it."""
     lang = callback.data.split(":", 1)[1]
     set_lang(lang)
     async for session in get_session():

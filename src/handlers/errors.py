@@ -1,4 +1,4 @@
-"""Глобальный обработчик ошибок: логирование без секретов + уведомление админа."""
+"""Global error handler: logging without secrets + admin notification."""
 
 import logging
 import traceback
@@ -15,24 +15,24 @@ router = Router()
 
 
 async def _notify_admin(bot: Bot, error_text: str) -> None:
-    """Отправляет уведомление администратору (AGENTS.md п.8). Без PII."""
+    """Notifies the admin (AGENTS.md item 8). No PII."""
     admin_id = get_settings().admin_id
     if not admin_id:
         return
     try:
         await bot.send_message(
             admin_id,
-            f"⚠️ <b>Ошибка в боте</b>\n<code>{error_text[:1500]}</code>",
+            f"⚠️ <b>Bot error</b>\n<code>{error_text[:1500]}</code>",
         )
     except TelegramAPIError:
-        log.warning("Не удалось уведомить администратора об ошибке")
+        log.warning("Failed to notify the admin about the error")
 
 
 @router.errors()
 async def on_error(event: ErrorEvent, **kwargs: Any) -> None:
-    """Логирует ошибку хендлера и уведомляет администратора."""
+    """Logs a handler error and notifies the admin."""
     error = event.exception
-    log.error("Ошибка в хендлере %s: %s", event.update.event_type, error)
+    log.error("Error in handler %s: %s", event.update.event_type, error)
     log.error("".join(traceback.format_exception(error)))
 
     bot = kwargs.get("bot")

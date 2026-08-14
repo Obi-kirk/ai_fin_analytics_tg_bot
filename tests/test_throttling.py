@@ -1,4 +1,4 @@
-"""Тесты rate limiting middleware."""
+"""Tests for the rate limiting middleware."""
 
 import time
 from datetime import datetime, timezone
@@ -48,7 +48,7 @@ def _message(user_id: int) -> Message:
 async def _run_through(
     throttler: ThrottlingMiddleware, event, monkeypatch: pytest.MonkeyPatch
 ) -> tuple[bool, bool]:
-    """Прогоняет событие через middleware; (вызван_хендлер, прислано_предупреждение)."""
+    """Runs an event through the middleware; returns (handler_called, warning_sent)."""
     handler_called = False
     warned = [False]
 

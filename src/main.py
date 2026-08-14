@@ -1,6 +1,6 @@
-"""Точка входа бота: запуск в polling-режиме.
+"""Bot entry point: runs in polling mode.
 
-Запуск: python -m src.main [--reload]
+Run: python -m src.main [--reload]
 """
 
 import asyncio
@@ -41,9 +41,9 @@ log = logging.getLogger(__name__)
 
 
 def setup_logging() -> None:
-    """Настраивает логирование: консоль + ротация файлов (AGENTS.md п.8).
+    """Configures logging: console + rotating files (AGENTS.md item 8).
 
-    PII (телефоны, email, номера карт) маскируются форматтером (п.9).
+    PII (phones, emails, card numbers) is masked by the formatter (item 9).
     """
     fmt = RedactFormatter(
         "%(asctime)s %(levelname)s %(name)s: %(message)s", datefmt="%H:%M:%S"
@@ -63,7 +63,7 @@ def setup_logging() -> None:
 
 
 async def _setup_bot_commands(bot: Bot, admin_id: int | None) -> None:
-    """Список команд в интерфейсе Telegram: общие и админские (отдельным scope)."""
+    """Bot command list in the Telegram UI: common and admin ones (separate scope)."""
     user_commands = [
         BotCommand(command="start", description=t("cmd.start")),
         BotCommand(command="rate", description=t("cmd.rate")),
@@ -101,7 +101,7 @@ async def _setup_bot_commands(bot: Bot, admin_id: int | None) -> None:
 
 
 async def main() -> None:
-    """Собирает приложение и запускает поллинг."""
+    """Builds the app and starts polling."""
     settings = get_settings()
 
     bot = Bot(
@@ -113,7 +113,7 @@ async def main() -> None:
 
     cache = TTLCache()
     cache.start_gc()
-    dp["cache"] = cache  # DI для хендлеров (ключ — имя параметра)
+    dp["cache"] = cache  # DI for handlers (key is the parameter name)
 
     dp.message.outer_middleware(ThrottlingMiddleware(settings.rate_limit_per_minute))
     dp.callback_query.outer_middleware(
@@ -141,7 +141,7 @@ async def main() -> None:
     await create_tables()
     await _setup_bot_commands(bot, settings.admin_id)
 
-    log.info("Бот запущен (polling)")
+    log.info("Bot started (polling)")
     alert_task = asyncio.create_task(
         run_alert_loop(bot, settings.alert_interval_seconds)
     )
@@ -166,7 +166,7 @@ if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        log.info("Остановка по Ctrl+C")
+        log.info("Stopped by Ctrl+C")
     except Exception:
-        log.exception("Критическая ошибка при запуске")
+        log.exception("Critical error during startup")
         sys.exit(1)

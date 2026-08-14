@@ -1,8 +1,9 @@
-"""Тесты портфеля и алертов: определение типа актива, разбор аргументов.
+"""Portfolio and alert tests: asset type detection, argument parsing.
 
-Без БД и сети — только чистые функции.
+No DB or network — pure functions only.
 """
 
+import pytest
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from src.handlers.portfolio import (
@@ -18,6 +19,14 @@ from src.handlers.portfolio import (
     resolve_asset_type,
 )
 from src.services.financial_api import FxQuote, StockQuote
+
+
+@pytest.fixture(autouse=True)
+def _use_ru():
+    """These tests check Russian text — set the language explicitly."""
+    from src.i18n import set_lang
+
+    set_lang("ru")
 
 
 class TestResolveAssetType:

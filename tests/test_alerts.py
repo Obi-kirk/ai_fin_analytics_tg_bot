@@ -1,6 +1,6 @@
-"""Тесты сервиса алертов: правила срабатывания, маппинг id, батч-цены.
+"""Alert service tests: trigger rules, id mapping, batch prices.
 
-Без сети: HTTP-вызовы мокаются, чистые функции тестируются напрямую.
+No network: HTTP calls are mocked, pure functions are tested directly.
 """
 
 from unittest.mock import AsyncMock, patch
@@ -41,7 +41,7 @@ class TestAlertTriggered:
         assert alert_triggered(95.1, 5, "below", mode="percent", baseline=100) is False
 
     def test_percent_without_baseline_falls_back(self) -> None:
-        # нет baseline — поведение как у absolute
+        # no baseline — behaves like absolute
         assert alert_triggered(70000, 70000, "above", mode="percent") is True
 
 
@@ -56,7 +56,7 @@ class TestGeckoId:
 
 class TestFetchPrices:
     async def test_crypto_batch(self) -> None:
-        """Крипта запрашивается одним батчем (экономия лимита)."""
+        """Crypto is fetched in a single batch (saves rate-limit quota)."""
         gecko_mock = AsyncMock()
         gecko_mock.get_prices_batch.return_value = {
             "bitcoin": 70000.0,

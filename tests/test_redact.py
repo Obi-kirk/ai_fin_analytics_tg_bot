@@ -1,4 +1,4 @@
-"""Тесты маскировки PII в логах (AGENTS.md п.9)."""
+"""Tests for PII masking in logs (AGENTS.md item 9)."""
 
 import logging
 

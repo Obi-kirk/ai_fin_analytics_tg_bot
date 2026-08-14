@@ -1,10 +1,10 @@
-"""Фильтры aiogram для проверки прав доступа (RBAC, AGENTS.md п.4).
+"""aiogram filters for access control (RBAC, AGENTS.md item 4).
 
-Role берётся из контекста ``data``, который кладёт :class:`UsersMiddleware`:
-- ``role`` — «user» | «admin»
-- ``is_admin`` — супер-админ (из .env) или роль admin
+The role is taken from the ``data`` context, populated by :class:`UsersMiddleware`:
+- ``role`` — "user" | "admin"
+- ``is_admin`` — super-admin (from .env) or role admin
 
-``SuperAdminFilter`` — только владелец из .env (для назначения ролей).
+``SuperAdminFilter`` — only the owner from .env (for role assignment).
 """
 
 from typing import Any
@@ -16,14 +16,14 @@ from src.config.settings import get_settings
 
 
 class AdminFilter(BaseFilter):
-    """Пропускает сообщения администраторов (из .env или с ролью admin)."""
+    """Passes messages from admins (from .env or with role admin)."""
 
     async def __call__(self, event: TelegramObject, data: dict[str, Any]) -> bool:
         return bool(data.get("is_admin"))
 
 
 class SuperAdminFilter(BaseFilter):
-    """Пропускает только владельца из ADMIN_ID (.env)."""
+    """Passes only the owner from ADMIN_ID (.env)."""
 
     async def __call__(self, event: TelegramObject, data: dict[str, Any]) -> bool:
         admin_id = get_settings().admin_id

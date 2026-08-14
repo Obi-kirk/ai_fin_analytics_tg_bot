@@ -1,7 +1,7 @@
-"""Обработчик /analyze и колбэков analyse:* — AI-анализ актива (OpenRouter).
+"""Handler for /analyze and analyse:* callbacks — AI analysis of an asset (OpenRouter).
 
-Безопасность: ввод пользователя проходит sanitize_user_text() до отправки
-в LLM (AGENTS.md п.2), длина ограничена (MAX_QUERY_LENGTH).
+Security: user input goes through sanitize_user_text() before being sent
+to the LLM (AGENTS.md item 2); length is limited (MAX_QUERY_LENGTH).
 """
 
 import asyncio
@@ -33,7 +33,7 @@ from src.services.llm_service import (
 log = logging.getLogger(__name__)
 router = Router()
 
-# Символы подменю AI-анализа (из menu.py) и их формат
+# AI analysis submenu symbols (from menu.py) and their types
 ANALYSE_TYPES = {
     "AAPL": "stock",
     "TSLA": "stock",
@@ -56,42 +56,42 @@ QUERY_RE = re.compile(r"^[\w\s.,!?()%$€¥£+-]{1,500}$")
 
 SendText = Callable[[str], Awaitable[None]]
 
-# Ограничения для контекста: чтобы не раздувать промпт (AGENTS.md: экономия токенов)
+# Context limits: keep the prompt compact (AGENTS.md: token economy)
 MAX_DESCRIPTION_LENGTH = 300
 MAX_NEWS_ITEMS = 3
 MAX_NEWS_LENGTH = 120
 
 
 async def _fetch_company_profile(symbol: str) -> dict:
-    """Справка о компании Finnhub (кэшируется отдельно от котировки)."""
+    """Finnhub company profile (cached separately from the quote)."""
     async with make_session() as session:
         client = FinnhubClient(get_settings().finnhub_api_key)
         return await client.get_company_profile(symbol, session)
 
 
 async def _fetch_news(symbol: str) -> list[dict]:
-    """Свежие новости по тикеру Finnhub."""
+    """Fresh Finnhub news for the ticker."""
     async with make_session() as session:
         client = FinnhubClient(get_settings().finnhub_api_key)
         return await client.get_news(symbol, session)
 
 
 async def _fetch_market_data(coin_id: str) -> dict:
-    """Фундаментальные данные монеты CoinGecko."""
+    """CoinGecko fundamental coin data."""
     async with make_session() as session:
         client = CoinGeckoClient(get_settings().coingecko_api_key)
         return await client.get_market_data(coin_id, session)
 
 
 async def _fetch_price_history(coin_id: str) -> list[float]:
-    """История цен монеты за 30 дней (для тренда 7д/30д)."""
+    """30-day coin price history (for the 7d/30d trend)."""
     async with make_session() as session:
         client = CoinGeckoClient(get_settings().coingecko_api_key)
         return await client.get_price_history(coin_id, session)
 
 
 def _trend_change(prices: list[float], days: int) -> float | None:
-    """Изменение цены (%) от первой цены N дней назад до последней."""
+    """Price change (%) from the price N days ago to the last one."""
     if len(prices) < 2:
         return None
     step = max(1, len(prices) // days)
@@ -103,7 +103,7 @@ def _trend_change(prices: list[float], days: int) -> float | None:
 
 
 def _format_money(value: float | None) -> str:
-    """Форматирует крупные суммы: 1.29T, 21.3B, 900M, 126.1K."""
+    """Formats large amounts: 1.29T, 21.3B, 900M, 126.1K."""
     if not value:
         return "—"
     if value >= 1e12:
@@ -118,17 +118,17 @@ def _format_money(value: float | None) -> str:
 
 
 def _clean_text(text: str, limit: int) -> str:
-    """Убирает лишние пробелы/переносы и обрезает текст."""
+    """Removes extra spaces/line breaks and truncates the text."""
     cleaned = re.sub(r"\s+", " ", text or "").strip()
     return cleaned[:limit]
 
 
 async def _stock_context(symbol: str, cache: TTLCache) -> str:
-    """Контекст акции/индекса: котировка + профиль компании + свежие новости.
+    """Stock/index context: quote + company profile + fresh news.
 
-    Для индексов (SPX/DJI/VIX) Finnhub не отдаёт ^-тикеры — используются
-    ETF-аналоги через resolve_stock_symbol (SPX→SPY и т.д.).
-    Дополнительные данные не роняют анализ: при сбое остаётся котировка.
+    For indexes (SPX/DJI/VIX) Finnhub does not provide ^-tickers — ETF
+    equivalents are used via resolve_stock_symbol (SPX→SPY, etc.).
+    Extra data does not break the analysis: the quote remains on failure.
     """
     settings = get_settings()
     resolved = resolve_stock_symbol(symbol)
@@ -154,8 +154,8 @@ async def _stock_context(symbol: str, cache: TTLCache) -> str:
             lambda: _fetch_news(resolved),
             settings.cache_ttl_fundamental_seconds,
         )
-    except Exception:  # noqa: BLE001 — доп. данные не критичны
-        log.warning("Не удалось получить профиль/новости для %s", symbol)
+    except Exception:  # noqa: BLE001 — extra data is not critical
+        log.warning("Failed to fetch profile/news for %s", symbol)
 
     if profile.get("name") or profile.get("finnhubIndustry"):
         lines.append(
@@ -181,7 +181,7 @@ async def _stock_context(symbol: str, cache: TTLCache) -> str:
 
 
 async def _crypto_context(symbol: str, cache: TTLCache) -> str:
-    """Контекст криптовалюты: котировка + капитализация + тренд 7д/30д."""
+    """Cryptocurrency context: quote + market cap + 7d/30d trend."""
     settings = get_settings()
     quote = await fetch_crypto(symbol)
     sign = "+" if quote.change_percent >= 0 else ""
@@ -206,8 +206,8 @@ async def _crypto_context(symbol: str, cache: TTLCache) -> str:
             lambda: _fetch_price_history(coin_id),
             settings.cache_ttl_fundamental_seconds,
         )
-    except Exception:  # noqa: BLE001 — доп. данные не критичны
-        log.warning("Не удалось получить рыночные данные для %s", symbol)
+    except Exception:  # noqa: BLE001 — extra data is not critical
+        log.warning("Failed to fetch market data for %s", symbol)
 
     if market.get("name") or market.get("rank"):
         lines.append(
@@ -242,24 +242,24 @@ async def _crypto_context(symbol: str, cache: TTLCache) -> str:
 
 
 def _gecko_id(symbol: str) -> str:
-    """id монеты в CoinGecko по символу (согласовано с COINS в crypto.py)."""
+    """CoinGecko coin id by symbol (aligned with COINS in crypto.py)."""
     from src.handlers.crypto import COINS
 
     return COINS.get(symbol.upper(), symbol.lower())
 
 
 async def _market_context(symbol: str, cache: TTLCache) -> str:
-    """Контекст актива по известному символу подменю AI-анализа."""
+    """Context of an asset by a known AI analysis submenu symbol."""
     if ANALYSE_TYPES.get(symbol.upper()) == "crypto":
         return await _crypto_context(symbol, cache)
     return await _stock_context(symbol, cache)
 
 
 async def _detect_context(token: str, cache: TTLCache) -> str | None:
-    """Распознаёт актив по токену; None — это не актив (текстовый запрос).
+    """Detects an asset by token; None — it is not an asset (text query).
 
-    Для неизвестных тикеров пробуем акцию, затем монету; LookupError
-    означает «такого актива нет» и не считается ошибкой.
+    For unknown tickers a stock is tried first, then a coin; LookupError
+    means "no such asset" and is not treated as an error.
     """
     upper = token.upper()
     if upper in ANALYSE_TYPES:
@@ -279,7 +279,7 @@ async def _detect_context(token: str, cache: TTLCache) -> str | None:
 
 @router.message(Command("analyze"))
 async def cmd_analyze(message: Message, bot: Bot, cache: TTLCache) -> None:
-    """AI-анализ: /analyze BTC, /analyze BTC стоит ли покупать, /analyze вопрос."""
+    """AI analysis: /analyze BTC, /analyze BTC should I buy, /analyze question."""
     raw = message.text.split(maxsplit=1)
     if len(raw) < 2:
         await message.answer(t("analyze.usage"))
@@ -292,7 +292,7 @@ async def cmd_analyze(message: Message, bot: Bot, cache: TTLCache) -> None:
     context = None
     try:
         context = await _detect_context(first, cache)
-    except Exception:  # noqa: BLE001 — внешний API, ошибка уже залогирована
+    except Exception:  # noqa: BLE001 — external API, error already logged
         await message.answer(t("analyze.fetch_failed"))
         return
     if context is not None:
@@ -309,7 +309,7 @@ async def cmd_analyze(message: Message, bot: Bot, cache: TTLCache) -> None:
 
 @router.callback_query(F.data.regexp(r"^analyse:[A-Z]+$"))
 async def on_analyse(callback: CallbackQuery, bot: Bot, cache: TTLCache) -> None:
-    """Анализ тикера из подменю AI-анализа."""
+    """Analysis of a ticker from the AI analysis submenu."""
     symbol = callback.data.split(":", 1)[1]
     if symbol not in ANALYSE_TYPES:
         await callback.answer(t("analyze.unknown_asset"))
@@ -317,7 +317,7 @@ async def on_analyse(callback: CallbackQuery, bot: Bot, cache: TTLCache) -> None
     await callback.answer()
     try:
         context = await _market_context(symbol, cache)
-    except Exception:  # noqa: BLE001 — внешний API, ошибка уже залогирована
+    except Exception:  # noqa: BLE001 — external API, error already logged
         await callback.message.answer(t("analyze.fetch_failed"))
         return
     query = t("analyze.auto_query", symbol=symbol)
@@ -333,7 +333,7 @@ async def _run_analysis(
     query: str,
     context: str | None,
 ) -> None:
-    """Отправляет запрос в LLM с индикатором «печатает…»."""
+    """Sends the request to the LLM with a "typing…" indicator."""
     settings = get_settings()
     if not settings.openrouter_api_key:
         await send_text(t("analyze.not_configured"))
@@ -349,7 +349,7 @@ async def _run_analysis(
         )
         result = await client.analyze(query, context)
     except Exception:
-        log.exception("AI-анализ не удался")
+        log.exception("AI analysis failed")
         await send_text(t("analyze.failed"))
         return
     finally:
@@ -360,7 +360,7 @@ async def _run_analysis(
 
 
 async def _typing_loop(bot: Bot, chat_id: int) -> None:
-    """Показывает «печатает…», пока LLM думает (5 сек — лимит Telegram)."""
+    """Shows "typing…" while the LLM is thinking (5 s — Telegram limit)."""
     try:
         while True:
             await bot.send_chat_action(chat_id, action=ChatAction.TYPING)

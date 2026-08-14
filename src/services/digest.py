@@ -1,8 +1,8 @@
-"""Ежедневный дайджест: курсы ЦБ, топ акций/крипты, портфель пользователя.
+"""Daily digest: CBR rates, top stocks/crypto, user portfolio.
 
-Отправляется один раз в день в настроенное время (digest_hour:digest_minute).
-Дата последней отправки хранится в БД (last_sent), поэтому после рестарта
-бота повторная рассылка в тот же день не происходит.
+Sent once a day at the configured time (digest_hour:digest_minute).
+The last-sent date is stored in the DB (last_sent), so after a bot
+restart the digest is not sent again on the same day.
 """
 
 import asyncio
@@ -28,7 +28,7 @@ DIGEST_FX = ("USD", "EUR", "CNY", "JPY")
 DIGEST_STOCKS = ("AAPL", "NVDA", "MSFT", "TSLA", "META")
 DIGEST_CRYPTO = ("BTC", "ETH", "SOL", "XRP")
 
-# Доступные для настройки своего набора (те же источники, что в меню)
+# Assets available for a custom digest set (same sources as in the menu)
 DIGEST_AVAILABLE = {
     "fx": tuple(sorted(CBR_CURRENCIES)),
     "stock": (
@@ -49,7 +49,7 @@ DIGEST_AVAILABLE = {
 
 
 async def _user_assets(telegram_id: int) -> dict[str, list[str]]:
-    """Персональный набор активов дайджеста: {тип: [символы]}."""
+    """Personal digest asset set: {type: [symbols]}."""
     async for session in get_session():
         rows = (
             (
@@ -71,7 +71,7 @@ async def _user_assets(telegram_id: int) -> dict[str, list[str]]:
 def _line(
     asset_type: str, symbol: str, quote: object, quantity: float | None = None
 ) -> str:
-    """Однострочное описание котировки для дайджеста."""
+    """One-line quote description for the digest."""
     if asset_type == "fx":
         rate = f"{quote.value:.2f}" if quote.value >= 1 else f"{quote.value:.4f}"
         base = f"{quote.code} — {rate} ₽"
@@ -84,7 +84,7 @@ def _line(
 
 
 async def _fetch_quote(asset_type: str, symbol: str, cache: TTLCache) -> object:
-    """Котировка актива через кэш (те же ключи, что в меню)."""
+    """Asset quote through the cache (same keys as in the menu)."""
     settings = get_settings()
     if asset_type == "fx":
         return await cache.get_or_set(
@@ -105,28 +105,28 @@ async def _fetch_quote(asset_type: str, symbol: str, cache: TTLCache) -> object:
             lambda: fetch_crypto(symbol),
             settings.cache_ttl_stock_seconds,
         )
-    raise ValueError(f"Неизвестный тип актива: {asset_type}")
+    raise ValueError(f"Unknown asset type: {asset_type}")
 
 
 async def _section(
     title: str, symbols: list[str], asset_type: str, cache: TTLCache
 ) -> list[str]:
-    """Строки секции дайджеста (ошибка одного тикера не роняет всё)."""
+    """Lines of a digest section (one failing ticker does not break it)."""
     lines = [f"{title}\n"]
     for symbol in symbols:
         try:
             quote = await _fetch_quote(asset_type, symbol, cache)
             lines.append(_line(asset_type, symbol, quote))
-        except Exception:  # noqa: BLE001 — граница внешнего API
-            log.warning("Дайджест: не удалось получить %s (%s)", symbol, asset_type)
+        except Exception:  # noqa: BLE001 — boundary of an external API
+            log.warning("Digest: failed to fetch %s (%s)", symbol, asset_type)
     return lines
 
 
 async def build_digest(telegram_id: int, cache: TTLCache) -> str:
-    """Собирает текст дайджеста для пользователя.
+    """Builds the digest text for the user.
 
-    Если настроен персональный набор (digest_assets) — используется только
-    он; иначе дефолтный топ. Портфель добавляется всегда.
+    If a personal set is configured (digest_assets) — only that one is
+    used; otherwise the default top list. The portfolio is always added.
     """
     lines = [t("digest.build.title") + "\n"]
     user_assets = await _user_assets(telegram_id)
@@ -187,7 +187,7 @@ async def build_digest(telegram_id: int, cache: TTLCache) -> str:
             try:
                 quote = await _fetch_quote(item.asset_type, item.symbol, cache)
                 lines.append(_line(item.asset_type, item.symbol, quote, item.quantity))
-            except Exception:  # noqa: BLE001 — один актив не роняет дайджест
+            except Exception:  # noqa: BLE001 — one asset does not break the digest
                 lines.append(t("digest.unavailable", symbol=item.symbol))
 
     lines.append(t("digest.disclaimer"))
@@ -195,11 +195,11 @@ async def build_digest(telegram_id: int, cache: TTLCache) -> str:
 
 
 async def check_digest(bot: Bot, cache: TTLCache) -> int:
-    """Отправляет дайджест подписчикам в окне времени; число отправленных."""
+    """Sends the digest to subscribers within the time window; count sent."""
     settings = get_settings()
-    now = datetime.now(timezone.utc).astimezone()  # локальное время сервера
+    now = datetime.now(timezone.utc).astimezone()  # local server time
     window_start = settings.digest_hour * 60 + settings.digest_minute
-    window_end = window_start + 3  # окно 3 минуты, чтобы не пропустить
+    window_end = window_start + 3  # 3-minute window so we don't miss it
     if not (window_start <= now.hour * 60 + now.minute < window_end):
         return 0
 
@@ -214,25 +214,25 @@ async def check_digest(bot: Bot, cache: TTLCache) -> int:
                 await bot.send_message(sub.telegram_id, text)
                 sub.last_sent = now.date()
                 sent += 1
-            except Exception:  # noqa: BLE001 — один пользователь не фатален
+            except Exception:  # noqa: BLE001 — one user is not fatal
                 log.warning(
-                    "Дайджест: не удалось отправить пользователю %s",
+                    "Digest: failed to send to user %s",
                     sub.telegram_id,
                 )
         await session.commit()
     if sent:
-        log.info("Дайджест отправлен %s подписчикам", sent)
+        log.info("Digest sent to %s subscribers", sent)
     return sent
 
 
 async def run_digest_loop(bot: Bot, cache: TTLCache, interval_seconds: int) -> None:
-    """Бесконечный цикл проверки времени отправки дайджеста."""
-    log.info("Дайджест-цикл запущен (проверка каждые %s с)", interval_seconds)
+    """Infinite loop checking the digest sending time."""
+    log.info("Digest loop started (check every %s s)", interval_seconds)
     while True:
         try:
             await check_digest(bot, cache)
         except asyncio.CancelledError:
             raise
         except Exception:
-            log.exception("Ошибка в цикле дайджеста")
+            log.exception("Error in the digest loop")
         await asyncio.sleep(interval_seconds)

@@ -1,7 +1,7 @@
-"""Простой потокобезопасный in-memory кэш с TTL.
+"""Simple thread-safe in-memory cache with TTL.
 
-Не используется ни один внешний сервис — подходит для одного процесса бота.
-Для масштабирования (несколько инстансов) заменить на Redis.
+No external service is used — fits a single bot process.
+For scaling (multiple instances) replace with Redis.
 """
 
 import asyncio
@@ -13,7 +13,7 @@ T = TypeVar("T")
 
 
 class TTLCache:
-    """Кэш с временем жизни записей и опциональным сборщиком мусора."""
+    """Cache with per-entry TTL and an optional garbage collector."""
 
     def __init__(self, gc_interval_seconds: int = 300) -> None:
         self._data: dict[str, tuple[float, Any]] = {}
@@ -25,13 +25,13 @@ class TTLCache:
         self.misses = 0
 
     def start_gc(self) -> None:
-        """Запускает фоновую очистку просроченных записей (для polling-цикла)."""
+        """Starts background cleanup of expired entries (for the polling loop)."""
         if not self._started:
             self._started = True
             self._gc_task = asyncio.create_task(self._gc_loop())
 
     async def stop_gc(self) -> None:
-        """Останавливает фоновую очистку."""
+        """Stops the background cleanup."""
         if self._gc_task:
             self._gc_task.cancel()
             try:
@@ -40,7 +40,7 @@ class TTLCache:
                 pass
 
     async def get(self, key: str) -> Any | None:
-        """Возвращает значение или None, если ключа нет или он просрочен."""
+        """Returns the value or None if the key is missing or expired."""
         async with self._lock:
             item = self._data.get(key)
             if item is None:
@@ -55,7 +55,7 @@ class TTLCache:
             return value
 
     async def stats(self) -> dict[str, int]:
-        """Статистика кэша: записи, попадания, промахи."""
+        """Cache statistics: entries, hits, misses."""
         async with self._lock:
             return {
                 "entries": len(self._data),
@@ -64,7 +64,7 @@ class TTLCache:
             }
 
     async def set(self, key: str, value: Any, ttl_seconds: int) -> None:
-        """Сохраняет значение с временем жизни в секундах."""
+        """Stores a value with a lifetime in seconds."""
         async with self._lock:
             self._data[key] = (time.monotonic() + ttl_seconds, value)
 
@@ -74,7 +74,7 @@ class TTLCache:
         factory: Callable[[], Awaitable[T]],
         ttl_seconds: int,
     ) -> T:
-        """Возвращает кэшированное значение или вычисляет и сохраняет новое."""
+        """Returns the cached value or computes and stores a new one."""
         cached = await self.get(key)
         if cached is not None:
             return cached
@@ -83,17 +83,17 @@ class TTLCache:
         return value
 
     async def delete(self, key: str) -> None:
-        """Принудительно удаляет запись (для кнопки «обновить»)."""
+        """Forcefully removes an entry (for the "refresh" button)."""
         async with self._lock:
             self._data.pop(key, None)
 
     async def clear(self) -> None:
-        """Полная очистка кэша."""
+        """Clears the whole cache."""
         async with self._lock:
             self._data.clear()
 
     async def _gc_loop(self) -> None:
-        """Периодически удаляет просроченные записи."""
+        """Periodically removes expired entries."""
         while True:
             await asyncio.sleep(self._gc_interval)
             now = time.monotonic()

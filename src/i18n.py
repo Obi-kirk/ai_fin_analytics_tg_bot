@@ -1,11 +1,11 @@
-"""i18n (Вариант B): словари строк RU/EN + функция доступа.
+"""i18n (Option B): RU/EN string dictionaries + access function.
 
-Язык по умолчанию берётся из .env (DEFAULT_LANGUAGE), персональный выбор
-пользователя хранится в users.language и устанавливается middleware
-(UsersMiddleware) через контекстную переменную. Фоновые циклы (дайджест,
-алерты) читают язык получателя из БД.
+The default language comes from .env (DEFAULT_LANGUAGE); a user's personal
+choice is stored in users.language and set by the middleware
+(UsersMiddleware) via a context variable. Background loops (digest,
+alerts) read the recipient's language from the DB.
 
-Использование в хендлерах:
+Usage in handlers:
     from src.i18n import t
     await message.answer(t("portfolio.empty"))
     await message.answer(t("fx.format", name=..., code=..., rate=...))
@@ -17,9 +17,9 @@ from typing import Any
 from src.config.settings import get_settings
 
 SUPPORTED_LANGUAGES = ("ru", "en")
-DEFAULT_LANGUAGE = "ru"
+DEFAULT_LANGUAGE = "ru"  # fallback if DEFAULT_LANGUAGE is not set in .env
 
-_lang: ContextVar[str] = ContextVar("lang", default=DEFAULT_LANGUAGE)
+_lang: ContextVar[str] = ContextVar("lang", default="")
 
 # ──────────────────────────────────────────────────────────────── словари
 
@@ -979,7 +979,7 @@ _STRINGS: dict[str, dict[str, str]] = {
 
 
 def get_lang() -> str:
-    """Текущий язык (контекстная переменная или дефолт из .env)."""
+    """Current language (context variable or the .env default)."""
     lang = _lang.get()
     if lang in SUPPORTED_LANGUAGES:
         return lang
@@ -988,19 +988,19 @@ def get_lang() -> str:
 
 
 def set_lang(lang: str) -> None:
-    """Устанавливает язык в текущем контексте (вызывается middleware)."""
+    """Sets the language in the current context (called by middleware)."""
     _lang.set(lang if lang in SUPPORTED_LANGUAGES else DEFAULT_LANGUAGE)
 
 
 def reset_lang() -> None:
-    """Сбрасывает язык к значению по умолчанию (для тестов)."""
-    _lang.set(DEFAULT_LANGUAGE)
+    """Resets the language to the configured default (for tests)."""
+    _lang.set("")
 
 
 def t(key: str, **kwargs: Any) -> str:
-    """Возвращает строку по ключу на текущем языке; подставляет kwargs.
+    """Returns the string for the key in the current language; fills kwargs.
 
-    Неизвестный ключ возвращается как есть (не роняем бота).
+    An unknown key is returned as-is (does not crash the bot).
     """
     lang = get_lang()
     template = _STRINGS.get(lang, {}).get(key)

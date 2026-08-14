@@ -1,7 +1,7 @@
-"""Административные команды: панель, рассылка с подтверждением, баны.
+"""Administrative commands: panel, broadcast with confirmation, bans.
 
-Доступ только у ADMIN_ID из .env (AGENTS.md п.4 — проверка прав в фильтре).
-Рассылка требует явного подтверждения (Human-in-the-Loop, AGENTS.md п.7).
+Access is limited to ADMIN_ID from .env (AGENTS.md item 4 — access check in the filter).
+Broadcast requires explicit confirmation (Human-in-the-Loop, AGENTS.md item 7).
 """
 
 import logging
@@ -28,14 +28,14 @@ router = Router()
 
 
 class BroadcastCD(CallbackData, prefix="broadcast"):
-    """Callback-данные подтверждения рассылки."""
+    """Callback data for the broadcast confirmation."""
 
     action: str  # "confirm" | "cancel"
-    msg_id: int  # id сообщения-текста рассылки
+    msg_id: int  # id of the broadcast text message
 
 
 class UsersPageCD(CallbackData, prefix="users"):
-    """Callback-данные пагинации списка пользователей."""
+    """Callback data for the user list pagination."""
 
     page: int
 
@@ -43,19 +43,19 @@ class UsersPageCD(CallbackData, prefix="users"):
 USERS_PER_PAGE = 10
 
 
-# Память ожидающей рассылки: id пользователя (админа) -> текст
+# Memory of the pending broadcast: user (admin) id -> text
 _pending_broadcast: dict[int, tuple[int, str]] = {}
 
 
 def _is_admin(user: TelegramUser) -> bool:
-    """Совместимость: проверка по ADMIN_ID из .env (без обращения к БД)."""
+    """Compatibility: check by ADMIN_ID from .env (no DB access)."""
     admin_id = get_settings().admin_id
     return bool(admin_id) and user.id == admin_id
 
 
 @router.message(Command("admin"), AdminFilter())
 async def cmd_admin(message: Message, stats: BotStats, cache: TTLCache) -> None:
-    """Панель администратора: пользователи, кэш, аптайм, популярные команды."""
+    """Admin panel: users, cache, uptime, popular commands."""
     async for session in get_session():
         total_users = (
             await session.execute(select(func.count()).select_from(User))
@@ -90,7 +90,7 @@ async def cmd_admin(message: Message, stats: BotStats, cache: TTLCache) -> None:
 
 @router.message(Command("cachestats"), AdminFilter())
 async def cmd_cachestats(message: Message, cache: TTLCache) -> None:
-    """Статистика кэша: попадания, промахи, количество записей."""
+    """Cache statistics: hits, misses, entry count."""
     stats = await cache.stats()
     total = stats["hits"] + stats["misses"]
     hit_rate = f"{stats['hits'] / total * 100:.1f}%" if total else "—"
@@ -107,13 +107,13 @@ async def cmd_cachestats(message: Message, cache: TTLCache) -> None:
 
 @router.message(Command("users"), AdminFilter())
 async def cmd_users(message: Message) -> None:
-    """Список пользователей, первая страница."""
+    """User list, first page."""
     await _show_users_page(message, page=1)
 
 
 @router.message(Command("recent"), AdminFilter())
 async def cmd_recent(message: Message) -> None:
-    """Последние запросы пользователей (история query_log)."""
+    """Recent user queries (query_log history)."""
     async for session in get_session():
         entries = (
             (
@@ -141,12 +141,12 @@ async def cmd_recent(message: Message) -> None:
 
 @router.callback_query(UsersPageCD.filter(), AdminFilter())
 async def on_users_page(callback: CallbackQuery) -> None:
-    """Листает страницы списка пользователей."""
+    """Pages through the user list."""
     await _edit_users_page(callback, page=UsersPageCD.unpack(callback.data).page)
 
 
 async def _users_page_text(page: int) -> tuple[str, int, bool]:
-    """Текст страницы списка пользователей; возвращает (текст, страниц, есть_следующая)."""
+    """User list page text; returns (text, pages, has_next)."""
     async for session in get_session():
         total = (await session.execute(select(func.count()).select_from(User))).scalar()
         users = (
@@ -209,7 +209,7 @@ async def _edit_users_page(callback: CallbackQuery, page: int) -> None:
 
 @router.message(Command("broadcast"), AdminFilter())
 async def cmd_broadcast(message: Message, command: CommandObject) -> None:
-    """Начинает рассылку: запрашивает подтверждение у администратора."""
+    """Starts a broadcast: asks the administrator for confirmation."""
     text = command.args
     if not text:
         await message.answer(t("admin.broadcast.usage"))
@@ -255,7 +255,7 @@ def _confirm_kb() -> InlineKeyboardMarkup:
 
 @router.callback_query(BroadcastCD.filter(), AdminFilter())
 async def on_broadcast_confirm(callback: CallbackQuery, bot: Bot) -> None:
-    """Обрабатывает подтверждение/отмену рассылки."""
+    """Handles the broadcast confirmation/cancellation."""
     data = BroadcastCD.unpack(callback.data)
     pending = _pending_broadcast.pop(callback.from_user.id, None)
     if not pending:
@@ -278,7 +278,7 @@ async def on_broadcast_confirm(callback: CallbackQuery, bot: Bot) -> None:
 
 
 async def _do_broadcast(bot: Bot, text: str) -> tuple[int, int]:
-    """Отправляет текст всем незабаненным пользователям."""
+    """Sends the text to all non-banned users."""
     sent = failed = 0
     async for session in get_session():
         users = (
@@ -294,15 +294,15 @@ async def _do_broadcast(bot: Bot, text: str) -> tuple[int, int]:
         try:
             await bot.send_message(user_id, text)
             sent += 1
-        except Exception:  # noqa: BLE001 — один пользователь не должен ронять рассылку
+        except Exception:  # noqa: BLE001 — one user must not break the broadcast
             failed += 1
-            log.warning("Не удалось отправить рассылку пользователю id=%s", user_id)
+            log.warning("Failed to send the broadcast to user id=%s", user_id)
     return sent, failed
 
 
 @router.message(Command("ban"), AdminFilter())
 async def cmd_ban(message: Message, command: CommandObject) -> None:
-    """Банит пользователя: /ban 123456789."""
+    """Bans a user: /ban 123456789."""
     target = _parse_target(command)
     if target is None:
         await message.answer(t("admin.ban.usage"))
@@ -320,7 +320,7 @@ async def cmd_ban(message: Message, command: CommandObject) -> None:
 
 @router.message(Command("unban"), AdminFilter())
 async def cmd_unban(message: Message, command: CommandObject) -> None:
-    """Разбанивает пользователя: /unban 123456789."""
+    """Unbans a user: /unban 123456789."""
     target = _parse_target(command)
     if target is None:
         await message.answer(t("admin.unban.usage"))
@@ -334,7 +334,7 @@ async def cmd_unban(message: Message, command: CommandObject) -> None:
 
 
 def _parse_target(command: CommandObject) -> int | None:
-    """Извлекает числовой Telegram ID из аргументов команды."""
+    """Extracts a numeric Telegram ID from the command arguments."""
     if not command.args:
         return None
     try:
@@ -349,12 +349,12 @@ _ROLES = ("user", "admin")
 
 @router.message(Command("myrole"))
 async def cmd_myrole(message: Message, role: str) -> None:
-    """Показывает роль текущего пользователя."""
+    """Shows the current user's role."""
     await message.answer(t("admin.myrole", role=role))
 
 
 def _parse_setrole_args(args: str | None) -> tuple[int, str] | None:
-    """Разбирает аргументы /setrole: <id> <роль>. Возвращает (id, роль) или None."""
+    """Parses /setrole arguments: <id> <role>. Returns (id, role) or None."""
     parts = (args or "").split()
     if len(parts) < 2 or parts[1].lower() not in _ROLES:
         return None
@@ -368,9 +368,9 @@ def _parse_setrole_args(args: str | None) -> tuple[int, str] | None:
 async def cmd_setrole(
     message: Message, command: CommandObject, invalidate_role: Any
 ) -> None:
-    """Назначает роль пользователю: /setrole 123456789 admin|user.
+    """Assigns a role to a user: /setrole 123456789 admin|user.
 
-    Только владелец бота (ADMIN_ID из .env) может назначать роли.
+    Only the bot owner (ADMIN_ID from .env) can assign roles.
     """
     parsed = _parse_setrole_args(command.args)
     if parsed is None:

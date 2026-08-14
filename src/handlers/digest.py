@@ -1,12 +1,12 @@
-"""Подписка и настройка дневного дайджеста: /digest + inline-кнопки.
+"""Daily digest subscription and setup: /digest + inline buttons.
 
-Колбэки:
-  dg:on / dg:off               — подписка / отписка
-  dg:send                      — собрать дайджест сейчас (по своему набору)
-  dg:setup                     — категории настройки набора
-  dg:setup_cat:TYPE            — список активов категории (переключатели)
-  dg:toggle:TYPE:SYM           — включить / выключить актив в наборе
-  dg:back                      — возврат из настройки к статусу
+Callbacks:
+  dg:on / dg:off               — subscribe / unsubscribe
+  dg:send                      — build the digest now (for the user's set)
+  dg:setup                     — set setup categories
+  dg:setup_cat:TYPE            — category asset list (toggles)
+  dg:toggle:TYPE:SYM           — enable / disable an asset in the set
+  dg:back                      — back from setup to the status
 """
 
 from aiogram import F, Router
@@ -33,12 +33,12 @@ TYPE_ICONS = {"fx": "💱", "stock": "📈", "crypto": "🪙"}
 
 
 def _type_title(asset_type: str) -> str:
-    """Название категории на текущем языке."""
+    """Category name in the current language."""
     return t(f"digest.type.{asset_type}")
 
 
 async def _is_subscribed(telegram_id: int) -> bool:
-    """Подписан ли пользователь на дайджест."""
+    """Whether the user is subscribed to the digest."""
     async for session in get_session():
         sub = (
             await session.execute(
@@ -51,7 +51,7 @@ async def _is_subscribed(telegram_id: int) -> bool:
 
 
 async def _asset_symbols(telegram_id: int, asset_type: str) -> set[str]:
-    """Символы выбранного типа в персональном наборе."""
+    """Symbols of the selected type in the personal set."""
     async for session in get_session():
         rows = (
             (
@@ -69,7 +69,7 @@ async def _asset_symbols(telegram_id: int, asset_type: str) -> set[str]:
 
 
 def _status_text(subscribed: bool) -> str:
-    """Текст статуса подписки."""
+    """Subscription status text."""
     settings = get_settings()
     state = t("digest.status.on") if subscribed else t("digest.status.off")
     return t(
@@ -80,7 +80,7 @@ def _status_text(subscribed: bool) -> str:
 
 
 def _status_kb(subscribed: bool) -> InlineKeyboardMarkup:
-    """Кнопки статуса: настройка, собрать, подписка."""
+    """Status buttons: setup, send, subscribe."""
     sub_label = t("digest.btn.unsubscribe") if subscribed else t("digest.btn.subscribe")
     sub_data = "dg:off" if subscribed else "dg:on"
     builder = InlineKeyboardBuilder()
@@ -94,14 +94,14 @@ def _status_kb(subscribed: bool) -> InlineKeyboardMarkup:
 
 @router.message(Command("digest"))
 async def cmd_digest(message: Message) -> None:
-    """Показывает статус подписки на дневной дайджест."""
+    """Shows the daily digest subscription status."""
     subscribed = await _is_subscribed(message.from_user.id)
     await message.answer(_status_text(subscribed), reply_markup=_status_kb(subscribed))
 
 
 @router.callback_query(F.data == "dg:on")
 async def on_digest_on(callback: CallbackQuery) -> None:
-    """Подписка на дайджест."""
+    """Subscribes to the digest."""
     async for session in get_session():
         exists = (
             await session.execute(
@@ -122,7 +122,7 @@ async def on_digest_on(callback: CallbackQuery) -> None:
 
 @router.callback_query(F.data == "dg:off")
 async def on_digest_off(callback: CallbackQuery) -> None:
-    """Отписка от дайджеста."""
+    """Unsubscribes from the digest."""
     async for session in get_session():
         await session.execute(
             delete(DigestSubscription).where(
@@ -139,17 +139,17 @@ async def on_digest_off(callback: CallbackQuery) -> None:
 
 @router.callback_query(F.data == "dg:send")
 async def on_digest_send(callback: CallbackQuery, cache: TTLCache) -> None:
-    """Собирает дайджест по набору пользователя и отправляет сейчас."""
+    """Builds the digest for the user's set and sends it now."""
     await callback.answer(t("digest.sending"))
     try:
         text = await build_digest(callback.from_user.id, cache)
         await callback.message.answer(text)
-    except Exception:  # noqa: BLE001 — граница внешнего API
+    except Exception:  # noqa: BLE001 — external API boundary
         await callback.message.answer(t("digest.failed"))
 
 
 async def _setup_kb(telegram_id: int) -> InlineKeyboardMarkup:
-    """Клавиатура категорий настройки набора."""
+    """Keyboard of the set setup categories."""
     counts = {
         t: len(await _asset_symbols(telegram_id, t)) for t in ("fx", "stock", "crypto")
     }
@@ -173,7 +173,7 @@ async def _setup_kb(telegram_id: int) -> InlineKeyboardMarkup:
 
 
 async def _toggle_kb(telegram_id: int, asset_type: str) -> InlineKeyboardMarkup:
-    """Кнопки-переключатели активов категории."""
+    """Toggle buttons of the category assets."""
     selected = await _asset_symbols(telegram_id, asset_type)
     builder = InlineKeyboardBuilder()
     symbols = DIGEST_AVAILABLE[asset_type]
@@ -195,7 +195,7 @@ async def _toggle_kb(telegram_id: int, asset_type: str) -> InlineKeyboardMarkup:
 
 @router.callback_query(F.data == "dg:setup")
 async def on_digest_setup(callback: CallbackQuery) -> None:
-    """Меню настройки набора активов."""
+    """Asset set setup menu."""
     await callback.message.edit_text(
         t("digest.setup.title"),
         reply_markup=await _setup_kb(callback.from_user.id),
@@ -205,7 +205,7 @@ async def on_digest_setup(callback: CallbackQuery) -> None:
 
 @router.callback_query(F.data.regexp(r"^dg:setup_cat:(fx|stock|crypto)$"))
 async def on_digest_setup_cat(callback: CallbackQuery) -> None:
-    """Список активов категории с переключателями."""
+    """Category asset list with toggles."""
     asset_type = callback.data.split(":", 2)[2]
     selected = await _asset_symbols(callback.from_user.id, asset_type)
     await callback.message.edit_text(
@@ -223,7 +223,7 @@ async def on_digest_setup_cat(callback: CallbackQuery) -> None:
 
 @router.callback_query(F.data.regexp(r"^dg:toggle:(fx|stock|crypto):[A-Z0-9.\-]+$"))
 async def on_digest_toggle(callback: CallbackQuery) -> None:
-    """Включает / выключает актив в персональном наборе."""
+    """Enables / disables an asset in the personal set."""
     _, _, asset_type, symbol = callback.data.split(":", 3)
     async for session in get_session():
         exists = (
@@ -266,7 +266,7 @@ async def on_digest_toggle(callback: CallbackQuery) -> None:
 
 @router.callback_query(F.data == "dg:back")
 async def on_digest_back(callback: CallbackQuery) -> None:
-    """Возврат из настройки к статусу подписки."""
+    """Back from setup to the subscription status."""
     subscribed = await _is_subscribed(callback.from_user.id)
     await callback.message.edit_text(
         _status_text(subscribed), reply_markup=_status_kb(subscribed)

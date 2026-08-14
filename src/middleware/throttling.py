@@ -1,6 +1,6 @@
-"""Rate limiting: не более N событий в минуту с одного пользователя.
+"""Rate limiting: no more than N events per minute per user.
 
-Ограничивает сообщения и callback-запросы (защита от спама, AGENTS.md п.7).
+Limits messages and callback queries (spam protection, AGENTS.md item 7).
 """
 
 import logging
@@ -19,7 +19,7 @@ WINDOW_SECONDS = 60.0
 
 
 class ThrottlingMiddleware(BaseMiddleware):
-    """Скользящее окно: хранит метки времени событий каждого пользователя."""
+    """Sliding window: stores event timestamps for each user."""
 
     def __init__(self, rate_limit_per_minute: int) -> None:
         self._limit = rate_limit_per_minute

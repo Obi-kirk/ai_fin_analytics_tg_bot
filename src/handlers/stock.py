@@ -1,4 +1,4 @@
-"""Обработчик /stock и /news — котировки акций и новости (Finnhub)."""
+"""Handlers for the /stock and /news commands — stock quotes and news (Finnhub)."""
 
 import logging
 import re
@@ -28,8 +28,8 @@ from src.services.financial_api import (
 log = logging.getLogger(__name__)
 router = Router()
 
-# Индексы и их тикеры: пользователь пишет SPX, бот запрашивает ETF-аналог.
-# Finnhub /quote отдаёт только акции и ETF — индексы (^GSPC и т.п.) не поддерживает.
+# Indexes and their tickers: the user types SPX, the bot fetches an ETF equivalent.
+# Finnhub /quote returns only stocks and ETFs — indexes (^GSPC etc.) are not supported.
 INDEX_ALIASES = {
     "SPX": "SPY",
     "S&P500": "SPY",
@@ -45,16 +45,16 @@ TICKER_RE = re.compile(r"^[A-Z0-9.\-^]{1,15}$")
 
 
 def resolve_stock_symbol(raw: str) -> str:
-    """Возвращает реальный тикер для запроса: индексы -> ETF-аналоги.
+    """Returns the real ticker for the request: indexes -> ETF equivalents.
 
-    Finnhub /quote отдаёт только акции и ETF; ^GSPC, ^DJI и т.п. не поддерживает.
+    Finnhub /quote returns only stocks and ETFs; ^GSPC, ^DJI etc. are not supported.
     """
     return INDEX_ALIASES.get(raw.upper(), raw.upper())
 
 
 @router.message(Command("stock"))
 async def cmd_stock(message: Message, cache: TTLCache) -> None:
-    """Показывает цену акции или индекса, например: /stock AAPL."""
+    """Shows a stock or index price, e.g.: /stock AAPL."""
     args = message.text.split(maxsplit=1)
     if len(args) < 2:
         await message.answer(t("stock.usage"))
@@ -74,43 +74,43 @@ async def cmd_stock(message: Message, cache: TTLCache) -> None:
     except ApiRateLimitError:
         await message.answer(t("stock.rate_limit"))
         return
-    except Exception:  # noqa: BLE001 — граница внешнего API, ошибка уже залогирована
+    except Exception:  # noqa: BLE001 — external API boundary, error already logged
         await message.answer(t("stock.fetch_failed"))
         return
     await message.answer(format_stock(quote, display=raw))
 
 
 async def fetch_stock(symbol: str) -> StockQuote:
-    """Получает котировку Finnhub через отдельный HTTP-сеанс."""
+    """Fetches a Finnhub quote via a separate HTTP session."""
     async with make_session() as session:
         client = FinnhubClient(get_settings().finnhub_api_key)
         try:
             return await client.get_quote(symbol, session)
         except Exception:
-            log.exception("Не удалось получить котировку %s от Finnhub", symbol)
+            log.exception("Failed to fetch quote %s from Finnhub", symbol)
             raise
 
 
 async def fetch_news(symbol: str) -> list[dict]:
-    """Свежие новости по тикеру Finnhub."""
+    """Fresh Finnhub news for the ticker."""
     async with make_session() as session:
         client = FinnhubClient(get_settings().finnhub_api_key)
         try:
             return await client.get_news(symbol, session)
         except Exception:
-            log.exception("Не удалось получить новости %s от Finnhub", symbol)
+            log.exception("Failed to fetch news %s from Finnhub", symbol)
             raise
 
 
 def _format_news_date(ts: int | None) -> str:
-    """Дата новости в формате ДД.ММ (UTC)."""
+    """News date in DD.MM format (UTC)."""
     if not ts:
         return "—"
     return datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%d.%m")
 
 
 def format_news(symbol: str, news: list[dict], limit: int = 5) -> str:
-    """Форматирует новости по тикеру для Telegram (HTML)."""
+    """Formats news for the ticker for Telegram (HTML)."""
     lines = [t("stock.news_title", symbol=symbol) + "\n"]
     shown = 0
     for item in news:
@@ -131,7 +131,7 @@ def format_news(symbol: str, news: list[dict], limit: int = 5) -> str:
 
 @router.message(Command("news"))
 async def cmd_news(message: Message, cache: TTLCache) -> None:
-    """Последние новости по тикеру, например: /news AAPL."""
+    """Latest news for the ticker, e.g.: /news AAPL."""
     args = message.text.split(maxsplit=1)
     if len(args) < 2:
         await message.answer(t("stock.news.usage"))
@@ -145,7 +145,7 @@ async def cmd_news(message: Message, cache: TTLCache) -> None:
 
 
 def news_kb(symbol: str) -> InlineKeyboardMarkup:
-    """Кнопки под новостями: назад к котировке и возврат в подменю акций."""
+    """Buttons under the news: back to the quote and back to the stocks submenu."""
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
@@ -163,7 +163,7 @@ def news_kb(symbol: str) -> InlineKeyboardMarkup:
 async def _send_news(
     send: Callable[..., Awaitable[Any]], symbol: str, cache: TTLCache
 ) -> None:
-    """Достаёт новости из кэша/API и отправляет (текст, кнопки)."""
+    """Fetches news from the cache/API and sends it (text, buttons)."""
     settings = get_settings()
     try:
         news = await cache.get_or_set(
@@ -174,7 +174,7 @@ async def _send_news(
     except ApiRateLimitError:
         await send(t("stock.news_rate_limit"))
         return
-    except Exception:  # noqa: BLE001 — граница внешнего API, ошибка уже залогирована
+    except Exception:  # noqa: BLE001 — external API boundary, error already logged
         await send(t("stock.news_failed"))
         return
     await send(format_news(symbol, news), reply_markup=news_kb(symbol))
@@ -182,17 +182,17 @@ async def _send_news(
 
 @router.callback_query(F.data.regexp(r"^news:[A-Z0-9.\-^]+$"))
 async def on_news_cb(callback: CallbackQuery, cache: TTLCache) -> None:
-    """Открывает новости акции прямо из подменю (кнопка «📰 Новости»)."""
+    """Opens stock news right from the submenu (the "News" button)."""
     symbol = callback.data.split(":", 1)[1]
     await _send_news(callback.message.edit_text, symbol, cache)
     await callback.answer()
 
 
 def format_stock(quote: StockQuote, display: str | None = None) -> str:
-    """Форматирует котировку акции для Telegram (HTML).
+    """Formats a stock quote for Telegram (HTML).
 
-    ``display`` — как называть актив в заголовке (для индексов это исходный
-    алиас пользователя, напр. SPX, тогда как quote.symbol == SPY).
+    ``display`` — how to name the asset in the title (for indexes this is
+    the user's original alias, e.g. SPX, while quote.symbol == SPY).
     """
     label = display or quote.symbol
     sign = "+" if quote.change_percent >= 0 else ""

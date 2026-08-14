@@ -1,18 +1,18 @@
-"""Маскировка персональных данных (PII) в логах — AGENTS.md п.9.
+"""PII masking in logs — AGENTS.md item 9.
 
-Форматтер RedactFormatter применяет маску к любому сообщению лога:
-телефоны, email и длинные числовые номера заменяются на [REDACTED].
-Telegram ID (9-10 цифр) не маскируется: он нужен для /ban и отладки,
-это псевдоним, а не контактные данные.
+The RedactFormatter applies a mask to every log message:
+phones, emails and long numeric strings are replaced with [REDACTED].
+Telegram IDs (9-10 digits) are not masked: they are needed for /ban and
+debugging, being a pseudonym rather than contact data.
 """
 
 import logging
 import re
 
 _EMAIL_RE = re.compile(r"\b[\w.+-]+@[\w-]+\.[\w.-]+\b")
-# Телефоны: с кодом страны (+7 912...), мобильные 9XXXXXXXXX или номера
-# с разделителями (дефисы/пробелы). Голые 10-значные числа (Telegram ID,
-# коды) не маскируются.
+# Phones: with country code (+7 912...), mobile 9XXXXXXXXX or numbers
+# with separators (dashes/spaces). Bare 10-digit numbers (Telegram IDs,
+# codes) are not masked.
 _PHONE_RE = re.compile(
     r"(?<![A-Za-zА-Яа-я0-9])"
     r"(?:"
@@ -21,7 +21,7 @@ _PHONE_RE = re.compile(
     r"|(?:\d+[\s\-()]+){3,}\d{2,4}"
     r")(?!\d)"
 )
-# Карты/счета: непрерывные последовательности из 13+ цифр
+# Cards/accounts: continuous sequences of 13+ digits
 _LONG_NUMBER_RE = re.compile(r"\b\d{13,}\b")
 
 _REDACTED_EMAIL = "[REDACTED_EMAIL]"
@@ -30,7 +30,7 @@ _REDACTED_NUMBER = "[REDACTED_NUMBER]"
 
 
 def redact_pii(text: str) -> str:
-    """Заменяет контактные данные в тексте на маски."""
+    """Replaces contact data in the text with masks."""
     text = _LONG_NUMBER_RE.sub(_REDACTED_NUMBER, text)
     text = _EMAIL_RE.sub(_REDACTED_EMAIL, text)
     text = _PHONE_RE.sub(_REDACTED_PHONE, text)
@@ -38,7 +38,7 @@ def redact_pii(text: str) -> str:
 
 
 class RedactFormatter(logging.Formatter):
-    """Форматтер логов: маскирует PII до применения стандартного формата."""
+    """Log formatter: masks PII before applying the standard format."""
 
     def format(self, record: logging.LogRecord) -> str:
         message = record.getMessage()

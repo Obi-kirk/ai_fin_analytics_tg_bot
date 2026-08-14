@@ -1,6 +1,6 @@
-"""Тесты клиентов финансовых API на фикстурах (без реальной сети).
+"""Financial API client tests using fixtures (no real network).
 
-HTTP-запросы замоканы фейковыми ответами: XML ЦБ РФ, JSON Finnhub и CoinGecko.
+HTTP requests are mocked with fake responses: CBR XML, Finnhub and CoinGecko JSON.
 """
 
 from types import SimpleNamespace
@@ -35,7 +35,7 @@ COINGECKO_JSON = '{"bitcoin": {"usd": 63942.0, "usd_24h_change": -1.84}}'
 
 
 def make_session(status: int = 200, body: str = "") -> SimpleNamespace:
-    """Создаёт фейковую aiohttp-сессию, возвращающую заданный ответ."""
+    """Creates a fake aiohttp session returning the given response."""
 
     class FakeResponse:
         def __init__(self) -> None:
@@ -80,7 +80,7 @@ async def test_cbr_jpy_nominal() -> None:
 
 
 async def test_cbr_unknown_currency() -> None:
-    with pytest.raises(ValueError, match="не поддерживается"):
+    with pytest.raises(ValueError, match="not supported"):
         await CBRClient().get_quote("XXX", make_session(body=CBR_XML))
 
 

@@ -1,7 +1,7 @@
-"""Клиенты финансовых API: ЦБ РФ (валюты), FCS API (акции/крипта), CoinGecko (крипта).
+"""Clients for financial APIs: CBR (currencies), FCS API (stocks/crypto), CoinGecko (crypto).
 
-Все исходящие запросы проходят проверку white-листа доменов (AGENTS.md, п.6).
-Клиенты не логируют и не сохраняют ключи доступа.
+All outgoing requests are checked against the domain white-list (AGENTS.md, item 6).
+Clients never log or store API keys.
 """
 
 import logging
@@ -14,22 +14,22 @@ import aiohttp
 
 log = logging.getLogger(__name__)
 
-# White-list доменов для исходящих запросов (AGENTS.md, п.6)
+# White-list of domains for outgoing requests (AGENTS.md, item 6)
 ALLOWED_API_DOMAINS = (
     "www.cbr.ru",
     "api-v4.fcsapi.com",
     "api.coingecko.com",
     "finnhub.io",
-    "openrouter.ai",  # и api.openrouter.ai
+    "openrouter.ai",  # and api.openrouter.ai
     "api.telegram.org",
 )
 
 
 class ApiRateLimitError(RuntimeError):
-    """Превышен лимит запросов бесплатного API (HTTP 429)."""
+    """Rate limit of the free API exceeded (HTTP 429)."""
 
 
-# Поддерживаемые валюты ЦБ РФ (коды ISO)
+# Currencies supported by CBR (ISO codes)
 CBR_CURRENCIES = frozenset(
     {
         "USD",
@@ -52,7 +52,7 @@ HTTP_TIMEOUT_SECONDS = 10
 
 
 def make_session() -> aiohttp.ClientSession:
-    """HTTP-сессия с таймаутом, чтобы бот не зависал на внешних API."""
+    """HTTP session with a timeout so the bot never hangs on external APIs."""
     return aiohttp.ClientSession(
         timeout=aiohttp.ClientTimeout(total=HTTP_TIMEOUT_SECONDS),
         headers=BASE_HEADERS,
@@ -60,25 +60,25 @@ def make_session() -> aiohttp.ClientSession:
 
 
 def _check_domain(url: str) -> None:
-    """Гарантирует, что URL принадлежит разрешённому домену."""
+    """Ensures the URL belongs to an allowed domain."""
     allowed = any(domain in url for domain in ALLOWED_API_DOMAINS)
     if not allowed:
-        raise ValueError(f"URL не входит в white-list: {url}")
+        raise ValueError(f"URL is not in the white-list: {url}")
 
 
 @dataclass
 class FxQuote:
-    """Курс валюты от ЦБ РФ."""
+    """Currency rate from CBR."""
 
-    code: str  # ISO-код, например USD
-    name: str  # название валюты
-    value: float  # курс за 1 единицу (руб. за 1 USD)
-    nominal: int  # номинал (для JPY/CNY обычно 100)
+    code: str  # ISO code, e.g. USD
+    name: str  # currency name
+    value: float  # rate per one unit (RUB per 1 USD)
+    nominal: int  # nominal (usually 100 for JPY/CNY)
 
 
 @dataclass
 class StockQuote:
-    """Котировка акции/крипты от FCS API."""
+    """Stock/crypto quote from FCS API."""
 
     symbol: str
     price: float
@@ -86,15 +86,15 @@ class StockQuote:
 
 
 class CBRClient:
-    """Курсы валют ЦБ РФ (бесплатно, без ключа). HTML/XML daily."""
+    """CBR currency rates (free, no key required). HTML/XML daily."""
 
     BASE_URL = "https://www.cbr.ru/scripts/XML_daily.asp"
 
     async def get_quote(self, code: str, session: aiohttp.ClientSession) -> FxQuote:
-        """Возвращает курс валюты по ISO-коду (USD, EUR, ...)."""
+        """Returns the currency rate by ISO code (USD, EUR, ...)."""
         iso = code.upper()
         if iso not in CBR_CURRENCIES:
-            raise ValueError(f"Валюта {iso} не поддерживается")
+            raise ValueError(f"Currency {iso} is not supported")
         _check_domain(self.BASE_URL)
         async with session.get(self.BASE_URL) as resp:
             resp.raise_for_status()
@@ -111,11 +111,11 @@ class CBRClient:
                 value=float(value_text) / nominal,
                 nominal=nominal,
             )
-        raise LookupError(f"Валюта {iso} не найдена в ответе ЦБ РФ")
+        raise LookupError(f"Currency {iso} not found in the CBR response")
 
 
 class FCSClient:
-    """FCS API: акции и крипта. Нужен ключ (бесплатный план 500 req/мес)."""
+    """FCS API: stocks and crypto. Requires a key (free plan: 500 req/month)."""
 
     BASE_URL = "https://api-v4.fcsapi.com"
 
@@ -125,13 +125,13 @@ class FCSClient:
     async def get_stock_quote(
         self, symbol: str, session: aiohttp.ClientSession
     ) -> StockQuote:
-        """Текущая котировка акции, символ вида 'NASDAQ:AAPL'."""
+        """Current stock quote, symbol like 'NASDAQ:AAPL'."""
         return await self._quote("stock", symbol, session)
 
     async def get_crypto_quote(
         self, symbol: str, session: aiohttp.ClientSession
     ) -> StockQuote:
-        """Текущая цена криптовалюты, символ вида 'BTCUSD' (тип coin)."""
+        """Current crypto price, symbol like 'BTCUSD' (type coin)."""
         return await self._quote("crypto", symbol, session)
 
     async def _quote(
@@ -139,7 +139,7 @@ class FCSClient:
     ) -> StockQuote:
         if not self._api_key:
             raise RuntimeError(
-                f"FCS API ключ не настроен (переменная FCS_API_KEY) — нельзя запросить {symbol}"
+                f"FCS API key is not configured (FCS_API_KEY variable) — cannot request {symbol}"
             )
         url = f"{self.BASE_URL}/{market}/latest"
         params = {"symbol": symbol, "access_key": self._api_key}
@@ -150,10 +150,10 @@ class FCSClient:
             resp.raise_for_status()
             payload: dict[str, Any] = await resp.json()
         if not payload.get("status", False):
-            raise RuntimeError(f"FCS API: {payload.get('msg', 'неизвестная ошибка')}")
+            raise RuntimeError(f"FCS API: {payload.get('msg', 'unknown error')}")
         response = payload.get("response") or []
         if not response or "active" not in response[0]:
-            raise LookupError(f"FCS API не вернул данных по {symbol}")
+            raise LookupError(f"FCS API returned no data for {symbol}")
         quote: dict[str, Any] = response[0]["active"]
         try:
             return StockQuote(
@@ -162,11 +162,11 @@ class FCSClient:
                 change_percent=float(quote.get("chp") or 0),
             )
         except (KeyError, TypeError, ValueError) as exc:
-            raise LookupError(f"Некорректный ответ FCS API по {symbol}") from exc
+            raise LookupError(f"Malformed FCS API response for {symbol}") from exc
 
 
 class FinnhubClient:
-    """Котировки акций через Finnhub (бесплатно: 60 запросов/мин)."""
+    """Stock quotes via Finnhub (free tier: 60 requests/min)."""
 
     BASE_URL = "https://finnhub.io/api/v1"
 
@@ -176,21 +176,23 @@ class FinnhubClient:
     async def get_quote(
         self, symbol: str, session: aiohttp.ClientSession
     ) -> StockQuote:
-        """Текущая котировка акции/индекса по тикеру (AAPL, ^GSPC, SPY)."""
+        """Current stock/index quote by ticker (AAPL, ^GSPC, SPY)."""
         if not self._api_key:
             raise RuntimeError(
-                f"Finnhub API ключ не настроен (FINNHUB_API_KEY) — нельзя запросить {symbol}"
+                f"Finnhub API key is not configured (FINNHUB_API_KEY) — cannot request {symbol}"
             )
         url = f"{self.BASE_URL}/quote"
         params = {"symbol": symbol, "token": self._api_key}
         _check_domain(url)
         async with session.get(url, params=params, headers=BASE_HEADERS) as resp:
             if resp.status == 429:
-                raise ApiRateLimitError("Finnhub: превышен лимит запросов")
+                raise ApiRateLimitError("Finnhub: request rate limit exceeded")
             resp.raise_for_status()
             payload: dict[str, Any] = await resp.json()
         if not payload.get("c"):
-            raise LookupError(f"Finnhub не знает тикер {symbol} (или превышен лимит)")
+            raise LookupError(
+                f"Finnhub does not know ticker {symbol} (or rate limit exceeded)"
+            )
         return StockQuote(
             symbol=symbol,
             price=float(payload["c"]),
@@ -200,17 +202,17 @@ class FinnhubClient:
     async def get_company_profile(
         self, symbol: str, session: aiohttp.ClientSession
     ) -> dict[str, Any]:
-        """Справка о компании: название, сектор, описание (может быть пустой)."""
+        """Company profile: name, sector, description (may be empty)."""
         if not self._api_key:
             raise RuntimeError(
-                f"Finnhub API ключ не настроен (FINNHUB_API_KEY) — нельзя запросить профиль {symbol}"
+                f"Finnhub API key is not configured (FINNHUB_API_KEY) — cannot request profile for {symbol}"
             )
         url = f"{self.BASE_URL}/stock/profile2"
         params = {"symbol": symbol, "token": self._api_key}
         _check_domain(url)
         async with session.get(url, params=params, headers=BASE_HEADERS) as resp:
             if resp.status == 429:
-                raise ApiRateLimitError("Finnhub: превышен лимит запросов")
+                raise ApiRateLimitError("Finnhub: request rate limit exceeded")
             resp.raise_for_status()
             payload: dict[str, Any] = await resp.json()
         return payload or {}
@@ -218,10 +220,10 @@ class FinnhubClient:
     async def get_news(
         self, symbol: str, session: aiohttp.ClientSession, days: int = 10
     ) -> list[dict[str, Any]]:
-        """Свежие новости по тикеру (free-тариф отдаёт заголовки)."""
+        """Recent news for the ticker (free tier returns headlines)."""
         if not self._api_key:
             raise RuntimeError(
-                f"Finnhub API ключ не настроен (FINNHUB_API_KEY) — нельзя запросить новости {symbol}"
+                f"Finnhub API key is not configured (FINNHUB_API_KEY) — cannot request news for {symbol}"
             )
         today = datetime.now(timezone.utc).date()
         since = today - timedelta(days=days)
@@ -235,16 +237,16 @@ class FinnhubClient:
         _check_domain(url)
         async with session.get(url, params=params, headers=BASE_HEADERS) as resp:
             if resp.status == 429:
-                raise ApiRateLimitError("Finnhub: превышен лимит запросов")
+                raise ApiRateLimitError("Finnhub: request rate limit exceeded")
             resp.raise_for_status()
             payload: list[dict[str, Any]] = await resp.json()
         return [n for n in payload if n.get("headline")][:10]
 
 
 class CoinGeckoClient:
-    """Цены криптовалют CoinGecko. Демо-ключ: 100 req/мин, 10k/мес.
+    """CoinGecko crypto prices. Demo key: 100 req/min, 10k/month.
 
-    Работает и без ключа (keyless), но лимит значительно ниже и нестабилен.
+    Also works without a key, but the limit is much lower and unstable.
     """
 
     BASE_URL = "https://api.coingecko.com/api/v3"
@@ -261,14 +263,14 @@ class CoinGeckoClient:
             headers["x-cg-demo-api-key"] = self._api_key
         async with session.get(url, params=params, headers=headers) as resp:
             if resp.status == 429:
-                raise ApiRateLimitError("CoinGecko: превышен лимит запросов")
+                raise ApiRateLimitError("CoinGecko: request rate limit exceeded")
             resp.raise_for_status()
             return await resp.json()
 
     async def get_quote(
         self, coin_id: str, session: aiohttp.ClientSession
     ) -> StockQuote:
-        """Текущая цена и изменение за 24 часа (в %) в USD."""
+        """Current price and 24h change (in %) in USD."""
         url = f"{self.BASE_URL}/simple/price"
         payload = await self._get(
             url,
@@ -287,14 +289,14 @@ class CoinGeckoClient:
                 change_percent=float(data.get("usd_24h_change") or 0),
             )
         except (KeyError, TypeError, ValueError) as exc:
-            raise LookupError(f"CoinGecko не знает монету {coin_id}") from exc
+            raise LookupError(f"CoinGecko does not know coin {coin_id}") from exc
 
     async def get_prices_batch(
         self, coin_ids: list[str], session: aiohttp.ClientSession
     ) -> dict[str, float]:
-        """Цены нескольких монет одним запросом: {id: цена USD}.
+        """Prices of several coins in one request: {id: price in USD}.
 
-        Экономит бесплатный лимит CoinGecko для фоновых алертов.
+        Saves the free CoinGecko quota for background alerts.
         """
         if not coin_ids:
             return {}
@@ -313,7 +315,7 @@ class CoinGeckoClient:
     async def get_market_data(
         self, coin_id: str, session: aiohttp.ClientSession
     ) -> dict[str, Any]:
-        """Фундаментальные данные монеты: капитализация, объём, ранг, ATH."""
+        """Fundamental coin data: market cap, volume, rank, ATH."""
         url = f"{self.BASE_URL}/coins/{coin_id}"
         payload = await self._get(
             url,
@@ -327,7 +329,7 @@ class CoinGeckoClient:
             session,
         )
         if "market_data" not in payload:
-            raise LookupError(f"CoinGecko не знает монету {coin_id}")
+            raise LookupError(f"CoinGecko does not know coin {coin_id}")
         md = payload.get("market_data", {}) or {}
         return {
             "name": payload.get("name"),
@@ -342,7 +344,7 @@ class CoinGeckoClient:
     async def get_price_history(
         self, coin_id: str, session: aiohttp.ClientSession, days: int = 30
     ) -> list[float]:
-        """История цен (US-доллары) за N дней: только значения."""
+        """Price history (USD) for N days: values only."""
         url = f"{self.BASE_URL}/coins/{coin_id}/market_chart"
         payload = await self._get(
             url, {"vs_currency": "usd", "days": str(days)}, session
@@ -352,13 +354,13 @@ class CoinGeckoClient:
             return [float(p[1]) for p in prices]
         except (TypeError, ValueError) as exc:
             raise LookupError(
-                f"CoinGecko вернул некорректную историю для {coin_id}"
+                f"CoinGecko returned malformed history for {coin_id}"
             ) from exc
 
     async def get_trending(
         self, session: aiohttp.ClientSession
     ) -> list[dict[str, Any]]:
-        """Топ-15 трендовых монет CoinGecko."""
+        """Top-15 trending coins on CoinGecko."""
         url = f"{self.BASE_URL}/search/trending"
         payload = await self._get(url, {}, session)
         coins = []
@@ -377,7 +379,7 @@ class CoinGeckoClient:
     async def get_top_market_cap(
         self, session: aiohttp.ClientSession, limit: int = 10
     ) -> list[dict[str, Any]]:
-        """Топ монет по капитализации (порядок: market_cap_desc)."""
+        """Top coins by market cap (ordered by market_cap_desc)."""
         url = f"{self.BASE_URL}/coins/markets"
         payload = await self._get(
             url,
@@ -392,7 +394,7 @@ class CoinGeckoClient:
             session,
         )
         if not isinstance(payload, list):
-            raise TypeError("CoinGecko вернул некорректный топ капитализации")
+            raise TypeError("CoinGecko returned a malformed market cap top list")
         coins = []
         for item in payload:
             coins.append(
