@@ -1,5 +1,7 @@
 """The /lang command — bot language selection (ru/en), saved to users.language."""
 
+from collections.abc import Callable
+
 from aiogram import F, Router
 from aiogram.filters import Command
 from aiogram.types import (
@@ -42,7 +44,9 @@ async def cmd_lang(message: Message) -> None:
 
 
 @router.callback_query(F.data.regexp(r"^lang:(ru|en)$"))
-async def on_lang_choose(callback: CallbackQuery) -> None:
+async def on_lang_choose(
+    callback: CallbackQuery, invalidate_role: Callable[[int], None] | None = None
+) -> None:
     """Saves the selected language and confirms it."""
     lang = callback.data.split(":", 1)[1]
     set_lang(lang)
@@ -53,6 +57,8 @@ async def on_lang_choose(callback: CallbackQuery) -> None:
             .values(language=lang)
         )
         await session.commit()
+    if invalidate_role is not None:
+        invalidate_role(callback.from_user.id)
     name = t("lang.name." + lang)
     await callback.message.edit_text(t("lang.set", name=name))
     await callback.answer()
