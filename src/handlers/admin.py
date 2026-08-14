@@ -19,6 +19,7 @@ from src.config.settings import get_settings
 from src.database.db import get_session
 from src.database.models import QueryLog, User
 from src.filters import AdminFilter, SuperAdminFilter
+from src.i18n import t
 from src.middleware.users import BotStats
 from src.services.cache import TTLCache
 
@@ -67,17 +68,23 @@ async def cmd_admin(message: Message, stats: BotStats, cache: TTLCache) -> None:
     cache_stats = await cache.stats()
     rate = get_settings().rate_limit_per_minute
 
-    top = "\n".join(f"  /{c} — {n}" for c, n in stats.top_commands(5)) or "  пока нет"
+    top = "\n".join(f"  /{c} — {n}" for c, n in stats.top_commands(5)) or t(
+        "admin.no_commands"
+    )
     await message.answer(
-        "🔐 <b>Панель администратора</b>\n\n"
-        f"👥 Пользователей: <b>{total_users}</b>\n"
-        f"🚫 В бане: <b>{banned_users}</b>\n"
-        f"🕐 Аптайм: <b>{stats.uptime_human()}</b>\n"
-        f"⚙️ Лимит сообщений: {rate}/мин\n\n"
-        f"🗂 Кэш: {cache_stats['entries']} записей, "
-        f"hits {cache_stats['hits']}, misses {cache_stats['misses']}\n"
-        f"📊 Популярные команды:\n{top}\n\n"
-        f"Сообщений: {stats.messages}, колбэков: {stats.callbacks}"
+        t(
+            "admin.title",
+            users=total_users,
+            banned=banned_users,
+            uptime=stats.uptime_human(),
+            rate=rate,
+            entries=cache_stats["entries"],
+            hits=cache_stats["hits"],
+            misses=cache_stats["misses"],
+            top=top,
+            messages=stats.messages,
+            callbacks=stats.callbacks,
+        )
     )
 
 
@@ -88,11 +95,13 @@ async def cmd_cachestats(message: Message, cache: TTLCache) -> None:
     total = stats["hits"] + stats["misses"]
     hit_rate = f"{stats['hits'] / total * 100:.1f}%" if total else "—"
     await message.answer(
-        "🗂 <b>Кэш</b>\n"
-        f"Записей: {stats['entries']}\n"
-        f"Попаданий: {stats['hits']}\n"
-        f"Промахов: {stats['misses']}\n"
-        f"Эффективность: {hit_rate}"
+        t(
+            "admin.cache",
+            entries=stats["entries"],
+            hits=stats["hits"],
+            misses=stats["misses"],
+            rate=hit_rate,
+        )
     )
 
 
@@ -116,9 +125,9 @@ async def cmd_recent(message: Message) -> None:
             .all()
         )
     if not entries:
-        await message.answer("История запросов пока пуста.")
+        await message.answer(t("admin.recent.empty"))
         return
-    lines = ["🕐 <b>Последние запросы</b>\n"]
+    lines = [t("admin.recent.title") + "\n"]
     for entry in entries:
         time = entry.created_at.strftime("%d.%m %H:%M") if entry.created_at else "—"
         kind = "🔘" if entry.event_type == "callback" else "💬"
@@ -167,8 +176,12 @@ async def _users_page_text(page: int) -> tuple[str, int, bool]:
         lines.append(
             f"• {badge} <code>{u.telegram_id}</code> {name}{handle}{banned} — {created}"
         )
-    header = f"👥 <b>Пользователи</b> — всего: {total}\n"
-    return header + "\n".join(lines) or header + "пока нет", pages, page < pages
+    header = t("admin.users.title", total=total) + "\n"
+    return (
+        header + "\n".join(lines) or header + t("admin.users.empty"),
+        pages,
+        page < pages,
+    )
 
 
 async def _users_page_kb(page: int, pages: int) -> InlineKeyboardMarkup:
@@ -199,7 +212,7 @@ async def cmd_broadcast(message: Message, command: CommandObject) -> None:
     """Начинает рассылку: запрашивает подтверждение у администратора."""
     text = command.args
     if not text:
-        await message.answer("Укажи текст рассылки: /broadcast Привет всем!")
+        await message.answer(t("admin.broadcast.usage"))
         return
 
     async for session in get_session():
@@ -213,13 +226,15 @@ async def cmd_broadcast(message: Message, command: CommandObject) -> None:
             .all()
         )
     if not recipients:
-        await message.answer("Нет зарегистрированных пользователей.")
+        await message.answer(t("admin.broadcast.no_users"))
         return
 
     pending_msg = await message.answer(
-        f"⚠️ <b>Рассылка</b> {len(recipients)} пользователям?\n\n"
-        f"<blockquote>{text[:500]}</blockquote>\n"
-        "Подтверди или отмени:",
+        t(
+            "admin.broadcast.confirm",
+            n=len(recipients),
+            text=text[:500],
+        ),
         reply_markup=_confirm_kb(),
     )
     _pending_broadcast[message.from_user.id] = (pending_msg.message_id, text)
@@ -228,9 +243,13 @@ async def cmd_broadcast(message: Message, command: CommandObject) -> None:
 def _confirm_kb() -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
     kb.button(
-        text="✅ Да, рассылать", callback_data=BroadcastCD(action="confirm", msg_id=0)
+        text=t("admin.broadcast.yes"),
+        callback_data=BroadcastCD(action="confirm", msg_id=0),
     )
-    kb.button(text="❌ Отмена", callback_data=BroadcastCD(action="cancel", msg_id=0))
+    kb.button(
+        text=t("admin.broadcast.cancel"),
+        callback_data=BroadcastCD(action="cancel", msg_id=0),
+    )
     return kb.as_markup()
 
 
@@ -240,21 +259,21 @@ async def on_broadcast_confirm(callback: CallbackQuery, bot: Bot) -> None:
     data = BroadcastCD.unpack(callback.data)
     pending = _pending_broadcast.pop(callback.from_user.id, None)
     if not pending:
-        await callback.answer("Рассылка уже отменена или завершена.")
-        await callback.message.edit_text("Рассылка не активна.")
+        await callback.answer(t("admin.broadcast.stale"))
+        await callback.message.edit_text(t("admin.broadcast.inactive"))
         return
     if data.action == "cancel":
-        await callback.message.edit_text("❌ Рассылка отменена.")
+        await callback.message.edit_text(t("admin.broadcast.cancelled"))
         await callback.answer()
         return
 
     text = pending[1]
-    await callback.message.edit_text("📤 Отправляю рассылку…")
+    await callback.message.edit_text(t("admin.broadcast.sending"))
     await callback.answer()
 
     sent, failed = await _do_broadcast(bot, text)
     await callback.message.edit_text(
-        f"✅ Рассылка завершена: отправлено <b>{sent}</b>, ошибок <b>{failed}</b>."
+        t("admin.broadcast.done", sent=sent, failed=failed)
     )
 
 
@@ -286,7 +305,7 @@ async def cmd_ban(message: Message, command: CommandObject) -> None:
     """Банит пользователя: /ban 123456789."""
     target = _parse_target(command)
     if target is None:
-        await message.answer("Укажи Telegram ID: /ban 123456789")
+        await message.answer(t("admin.ban.usage"))
         return
     async for session in get_session():
         result = await session.execute(
@@ -295,9 +314,7 @@ async def cmd_ban(message: Message, command: CommandObject) -> None:
         await session.commit()
         banned = result.rowcount > 0
     await message.answer(
-        f"🚫 Пользователь <code>{target}</code> забанен."
-        if banned
-        else f"⚠️ Пользователь <code>{target}</code> не найден (все равно блокируется при следующих запросах)."
+        t("admin.ban.done", id=target) if banned else t("admin.ban.missing", id=target)
     )
 
 
@@ -306,16 +323,14 @@ async def cmd_unban(message: Message, command: CommandObject) -> None:
     """Разбанивает пользователя: /unban 123456789."""
     target = _parse_target(command)
     if target is None:
-        await message.answer("Укажи Telegram ID: /unban 123456789")
+        await message.answer(t("admin.unban.usage"))
         return
     async for session in get_session():
         await session.execute(
             update(User).where(User.telegram_id == target).values(is_banned=False)
         )
         await session.commit()
-    await message.answer(
-        f"✅ Пользователь <code>{target}</code> разбанен (если был в базе)."
-    )
+    await message.answer(t("admin.unban.done", id=target))
 
 
 def _parse_target(command: CommandObject) -> int | None:
@@ -335,7 +350,7 @@ _ROLES = ("user", "admin")
 @router.message(Command("myrole"))
 async def cmd_myrole(message: Message, role: str) -> None:
     """Показывает роль текущего пользователя."""
-    await message.answer(f"Твоя роль: <b>{role}</b>")
+    await message.answer(t("admin.myrole", role=role))
 
 
 def _parse_setrole_args(args: str | None) -> tuple[int, str] | None:
@@ -359,10 +374,7 @@ async def cmd_setrole(
     """
     parsed = _parse_setrole_args(command.args)
     if parsed is None:
-        await message.answer(
-            "Формат: /setRole <id> <роль>\nРоли: user, admin\n"
-            "Пример: /setrole 123456789 admin"
-        )
+        await message.answer(t("admin.setrole.usage"))
         return
     target, new_role = parsed
     async for session in get_session():
@@ -372,10 +384,8 @@ async def cmd_setrole(
         await session.commit()
         updated = result.rowcount > 0
     if not updated:
-        await message.answer(f"⚠️ Пользователь <code>{target}</code> не найден.")
+        await message.answer(t("admin.setrole.missing", id=target))
         return
     if invalidate_role is not None:
         invalidate_role(target)
-    await message.answer(
-        f"✅ Роль пользователя <code>{target}</code> → <b>{new_role}</b>"
-    )
+    await message.answer(t("admin.setrole.done", id=target, role=new_role))

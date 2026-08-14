@@ -23,13 +23,18 @@ from sqlalchemy import delete, select
 from src.config.settings import get_settings
 from src.database.db import get_session
 from src.database.models import DigestAsset, DigestSubscription
+from src.i18n import t
 from src.services.cache import TTLCache
 from src.services.digest import DIGEST_AVAILABLE, build_digest
 
 router = Router()
 
 TYPE_ICONS = {"fx": "💱", "stock": "📈", "crypto": "🪙"}
-TYPE_TITLES = {"fx": "Валюты", "stock": "Акции", "crypto": "Крипта"}
+
+
+def _type_title(asset_type: str) -> str:
+    """Название категории на текущем языке."""
+    return t(f"digest.type.{asset_type}")
 
 
 async def _is_subscribed(telegram_id: int) -> bool:
@@ -66,24 +71,22 @@ async def _asset_symbols(telegram_id: int, asset_type: str) -> set[str]:
 def _status_text(subscribed: bool) -> str:
     """Текст статуса подписки."""
     settings = get_settings()
-    state = "🔔 включена" if subscribed else "🔕 выключена"
-    return (
-        "📰 <b>Дневной дайджест</b>\n\n"
-        f"Статус: <b>{state}</b>\n"
-        f"Время отправки: каждый день в "
-        f"{settings.digest_hour:02d}:{settings.digest_minute:02d}.\n\n"
-        "Настрой свой набор активов или собери дайджест прямо сейчас."
+    state = t("digest.status.on") if subscribed else t("digest.status.off")
+    return t(
+        "digest.status",
+        state=state,
+        time=f"{settings.digest_hour:02d}:{settings.digest_minute:02d}",
     )
 
 
 def _status_kb(subscribed: bool) -> InlineKeyboardMarkup:
     """Кнопки статуса: настройка, собрать, подписка."""
-    sub_label = "🔕 Отписаться" if subscribed else "🔔 Подписаться"
+    sub_label = t("digest.btn.unsubscribe") if subscribed else t("digest.btn.subscribe")
     sub_data = "dg:off" if subscribed else "dg:on"
     builder = InlineKeyboardBuilder()
     builder.row(
-        InlineKeyboardButton(text="⚙️ Настроить набор", callback_data="dg:setup"),
-        InlineKeyboardButton(text="📤 Собрать сейчас", callback_data="dg:send"),
+        InlineKeyboardButton(text=t("digest.btn.setup"), callback_data="dg:setup"),
+        InlineKeyboardButton(text=t("digest.btn.send"), callback_data="dg:send"),
     )
     builder.row(InlineKeyboardButton(text=sub_label, callback_data=sub_data))
     return builder.as_markup()
@@ -111,7 +114,7 @@ async def on_digest_on(callback: CallbackQuery) -> None:
             session.add(DigestSubscription(telegram_id=callback.from_user.id))
             await session.commit()
     await callback.message.edit_text(
-        f"✅ Вы подписаны на дневной дайджест.\n\n{_status_text(True)}",
+        f"{t('digest.subscribed')}\n\n{_status_text(True)}",
         reply_markup=_status_kb(True),
     )
     await callback.answer()
@@ -128,7 +131,7 @@ async def on_digest_off(callback: CallbackQuery) -> None:
         )
         await session.commit()
     await callback.message.edit_text(
-        f"🔕 Вы отписаны от дайджеста.\n\n{_status_text(False)}",
+        f"{t('digest.unsubscribed')}\n\n{_status_text(False)}",
         reply_markup=_status_kb(False),
     )
     await callback.answer()
@@ -137,23 +140,25 @@ async def on_digest_off(callback: CallbackQuery) -> None:
 @router.callback_query(F.data == "dg:send")
 async def on_digest_send(callback: CallbackQuery, cache: TTLCache) -> None:
     """Собирает дайджест по набору пользователя и отправляет сейчас."""
-    await callback.answer("Собираю дайджест…")
+    await callback.answer(t("digest.sending"))
     try:
         text = await build_digest(callback.from_user.id, cache)
         await callback.message.answer(text)
     except Exception:  # noqa: BLE001 — граница внешнего API
-        await callback.message.answer("😔 Не удалось собрать дайджест. Попробуй позже.")
+        await callback.message.answer(t("digest.failed"))
 
 
 async def _setup_kb(telegram_id: int) -> InlineKeyboardMarkup:
     """Клавиатура категорий настройки набора."""
-    counts = {t: len(await _asset_symbols(telegram_id, t)) for t in TYPE_TITLES}
+    counts = {
+        t: len(await _asset_symbols(telegram_id, t)) for t in ("fx", "stock", "crypto")
+    }
     builder = InlineKeyboardBuilder()
     builder.row(
         *[
             InlineKeyboardButton(
                 text=(
-                    f"{TYPE_ICONS[t]} {TYPE_TITLES[t]} "
+                    f"{TYPE_ICONS[t]} {_type_title(t)} "
                     f"({counts[t]}/{len(DIGEST_AVAILABLE[t])})"
                 ),
                 callback_data=f"dg:setup_cat:{t}",
@@ -161,7 +166,9 @@ async def _setup_kb(telegram_id: int) -> InlineKeyboardMarkup:
             for t in ("fx", "stock", "crypto")
         ]
     )
-    builder.row(InlineKeyboardButton(text="↩️ Назад", callback_data="dg:back"))
+    builder.row(
+        InlineKeyboardButton(text=t("digest.btn.back"), callback_data="dg:back")
+    )
     return builder.as_markup()
 
 
@@ -180,7 +187,9 @@ async def _toggle_kb(telegram_id: int, asset_type: str) -> InlineKeyboardMarkup:
                 for s in symbols[i : i + 3]
             ]
         )
-    builder.row(InlineKeyboardButton(text="↩️ Категории", callback_data="dg:setup"))
+    builder.row(
+        InlineKeyboardButton(text=t("digest.btn.categories"), callback_data="dg:setup")
+    )
     return builder.as_markup()
 
 
@@ -188,9 +197,7 @@ async def _toggle_kb(telegram_id: int, asset_type: str) -> InlineKeyboardMarkup:
 async def on_digest_setup(callback: CallbackQuery) -> None:
     """Меню настройки набора активов."""
     await callback.message.edit_text(
-        "⚙️ <b>Настройка дайджеста</b>\n\n"
-        "Выбери категорию, чтобы включить активы в свой набор. "
-        "Если набор пуст — присылается дефолтный топ.",
+        t("digest.setup.title"),
         reply_markup=await _setup_kb(callback.from_user.id),
     )
     await callback.answer()
@@ -202,9 +209,13 @@ async def on_digest_setup_cat(callback: CallbackQuery) -> None:
     asset_type = callback.data.split(":", 2)[2]
     selected = await _asset_symbols(callback.from_user.id, asset_type)
     await callback.message.edit_text(
-        f"{TYPE_ICONS[asset_type]} <b>{TYPE_TITLES[asset_type]}</b> "
-        f"({len(selected)}/{len(DIGEST_AVAILABLE[asset_type])})\n\n"
-        "Нажимай на актив, чтобы включить или выключить его в дайджесте.",
+        t(
+            "digest.setup_cat",
+            icon=TYPE_ICONS[asset_type],
+            title=_type_title(asset_type),
+            sel=len(selected),
+            total=len(DIGEST_AVAILABLE[asset_type]),
+        ),
         reply_markup=await _toggle_kb(callback.from_user.id, asset_type),
     )
     await callback.answer()
@@ -241,9 +252,13 @@ async def on_digest_toggle(callback: CallbackQuery) -> None:
         await session.commit()
     selected = await _asset_symbols(callback.from_user.id, asset_type)
     await callback.message.edit_text(
-        f"{TYPE_ICONS[asset_type]} <b>{TYPE_TITLES[asset_type]}</b> "
-        f"({len(selected)}/{len(DIGEST_AVAILABLE[asset_type])})\n\n"
-        "Нажимай на актив, чтобы включить или выключить его в дайджесте.",
+        t(
+            "digest.setup_cat",
+            icon=TYPE_ICONS[asset_type],
+            title=_type_title(asset_type),
+            sel=len(selected),
+            total=len(DIGEST_AVAILABLE[asset_type]),
+        ),
         reply_markup=await _toggle_kb(callback.from_user.id, asset_type),
     )
     await callback.answer()

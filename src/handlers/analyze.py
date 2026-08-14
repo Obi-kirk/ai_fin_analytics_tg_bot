@@ -17,6 +17,7 @@ from aiogram.types import CallbackQuery, Message
 from src.config.settings import get_settings
 from src.handlers.crypto import COIN_RE, fetch_crypto
 from src.handlers.stock import TICKER_RE, fetch_stock, resolve_stock_symbol
+from src.i18n import t
 from src.services.cache import TTLCache
 from src.services.financial_api import (
     CoinGeckoClient,
@@ -52,8 +53,6 @@ ANALYSE_TYPES = {
 }
 
 QUERY_RE = re.compile(r"^[\w\s.,!?()%$€¥£+-]{1,500}$")
-
-AI_DISCLAIMER = "\n\n— <i>Это не инвестиционная рекомендация.</i>"
 
 SendText = Callable[[str], Awaitable[None]]
 
@@ -136,10 +135,10 @@ async def _stock_context(symbol: str, cache: TTLCache) -> str:
     quote = await fetch_stock(resolved)
     sign = "+" if quote.change_percent >= 0 else ""
     lines = [
-        "Тип: акция/индекс",
-        f"Символ: {symbol}",
-        f"Цена: {quote.price:.4f}",
-        f"Изменение за день: {sign}{quote.change_percent:.2f}%",
+        t("analyze.ctx.type_stock"),
+        t("analyze.ctx.symbol", symbol=symbol),
+        t("analyze.ctx.price", price=f"{quote.price:.4f}"),
+        t("analyze.ctx.day_change", sign=sign, pct=f"{quote.change_percent:.2f}"),
     ]
 
     profile: dict = {}
@@ -160,17 +159,23 @@ async def _stock_context(symbol: str, cache: TTLCache) -> str:
 
     if profile.get("name") or profile.get("finnhubIndustry"):
         lines.append(
-            f"Компания: {profile.get('name') or '—'} "
-            f"({profile.get('finnhubIndustry') or '—'})"
+            t(
+                "analyze.ctx.company",
+                name=profile.get("name") or "—",
+                industry=profile.get("finnhubIndustry") or "—",
+            )
         )
     if profile.get("description"):
         lines.append(
-            "Описание: " + _clean_text(profile["description"], MAX_DESCRIPTION_LENGTH)
+            t(
+                "analyze.ctx.desc",
+                desc=_clean_text(profile["description"], MAX_DESCRIPTION_LENGTH),
+            )
         )
     headlines = [_clean_text(n.get("headline", ""), MAX_NEWS_LENGTH) for n in news]
     headlines = [h for h in headlines if h][:MAX_NEWS_ITEMS]
     if headlines:
-        lines.append("Последние новости:")
+        lines.append(t("analyze.ctx.news"))
         lines.extend(f"- {h}" for h in headlines)
     return "\n".join(lines)
 
@@ -181,10 +186,10 @@ async def _crypto_context(symbol: str, cache: TTLCache) -> str:
     quote = await fetch_crypto(symbol)
     sign = "+" if quote.change_percent >= 0 else ""
     lines = [
-        "Тип: криптовалюта",
-        f"Символ: {quote.symbol}",
-        f"Цена: {quote.price:.4f}",
-        f"Изменение за 24ч: {sign}{quote.change_percent:.2f}%",
+        t("analyze.ctx.type_crypto"),
+        t("analyze.ctx.symbol", symbol=quote.symbol),
+        t("analyze.ctx.price", price=f"{quote.price:.4f}"),
+        t("analyze.ctx.change_24h", sign=sign, pct=f"{quote.change_percent:.2f}"),
     ]
 
     market: dict = {}
@@ -206,19 +211,32 @@ async def _crypto_context(symbol: str, cache: TTLCache) -> str:
 
     if market.get("name") or market.get("rank"):
         lines.append(
-            f"Монета: {market.get('name') or '—'} (rank #{market.get('rank') or '—'})"
+            t(
+                "analyze.ctx.coin",
+                name=market.get("name") or "—",
+                rank=market.get("rank") or "—",
+            )
         )
     cap = _format_money(market.get("market_cap"))
     volume = _format_money(market.get("volume"))
     ath = _format_money(market.get("ath"))
-    lines.append(f"Капитализация: {cap}, объём за 24ч: {volume}, ATH: {ath}")
+    lines.append(t("analyze.ctx.fund", cap=cap, vol=volume, ath=ath))
     change_7d = _trend_change(history, 7)
     change_30d = _trend_change(history, 30)
     if change_7d is not None:
-        lines.append(f"Тренд: 7д {change_7d:+.2f}%, 30д {change_30d:+.2f}%")
+        lines.append(
+            t(
+                "analyze.ctx.trend",
+                c7=f"{change_7d:+.2f}",
+                c30=f"{change_30d:+.2f}",
+            )
+        )
     if market.get("description"):
         lines.append(
-            "Описание: " + _clean_text(market["description"], MAX_DESCRIPTION_LENGTH)
+            t(
+                "analyze.ctx.desc",
+                desc=_clean_text(market["description"], MAX_DESCRIPTION_LENGTH),
+            )
         )
     return "\n".join(lines)
 
@@ -264,12 +282,7 @@ async def cmd_analyze(message: Message, bot: Bot, cache: TTLCache) -> None:
     """AI-анализ: /analyze BTC, /analyze BTC стоит ли покупать, /analyze вопрос."""
     raw = message.text.split(maxsplit=1)
     if len(raw) < 2:
-        await message.answer(
-            "🤖 Напиши запрос, например:\n"
-            "/analyze BTC — анализ монеты\n"
-            "/analyze стоит ли покупать BTC — вопрос про рынок\n"
-            "или выбери актив в меню AI-анализ"
-        )
+        await message.answer(t("analyze.usage"))
         return
 
     parts = raw[1].strip().split(maxsplit=1)
@@ -280,14 +293,16 @@ async def cmd_analyze(message: Message, bot: Bot, cache: TTLCache) -> None:
     try:
         context = await _detect_context(first, cache)
     except Exception:  # noqa: BLE001 — внешний API, ошибка уже залогирована
-        await message.answer("😔 Не удалось получить данные о активе.")
+        await message.answer(t("analyze.fetch_failed"))
         return
     if context is not None:
-        query = sanitize_user_text(rest) or f"Проанализируй актив {first.upper()}."
+        query = sanitize_user_text(rest) or t(
+            "analyze.auto_query", symbol=first.upper()
+        )
     else:
         query = sanitize_user_text(raw[1])
     if not query or not QUERY_RE.match(query):
-        await message.answer("Некорректный запрос. Опиши вопрос проще.")
+        await message.answer(t("analyze.bad_query"))
         return
     await _run_analysis(bot, message.chat.id, message.answer, query, context)
 
@@ -297,15 +312,15 @@ async def on_analyse(callback: CallbackQuery, bot: Bot, cache: TTLCache) -> None
     """Анализ тикера из подменю AI-анализа."""
     symbol = callback.data.split(":", 1)[1]
     if symbol not in ANALYSE_TYPES:
-        await callback.answer("Неизвестный актив. 🙈")
+        await callback.answer(t("analyze.unknown_asset"))
         return
     await callback.answer()
     try:
         context = await _market_context(symbol, cache)
     except Exception:  # noqa: BLE001 — внешний API, ошибка уже залогирована
-        await callback.message.answer("😔 Не удалось получить данные о активе.")
+        await callback.message.answer(t("analyze.fetch_failed"))
         return
-    query = f"Проанализируй актив {symbol}."
+    query = t("analyze.auto_query", symbol=symbol)
     await _run_analysis(
         bot, callback.message.chat.id, callback.message.answer, query, context
     )
@@ -321,15 +336,13 @@ async def _run_analysis(
     """Отправляет запрос в LLM с индикатором «печатает…»."""
     settings = get_settings()
     if not settings.openrouter_api_key:
-        await send_text(
-            "🤖 AI-агент ещё не настроен: добавь OPENROUTER_API_KEY в .env."
-        )
+        await send_text(t("analyze.not_configured"))
         return
 
     typing_task = asyncio.create_task(_typing_loop(bot, chat_id))
     try:
         if context is None:
-            context = "Запрос пользователя: " + query[:300]
+            context = t("analyze.context_prompt", query=query[:300])
         client = LLMClient(
             settings.openrouter_api_key,
             max_tokens=settings.openrouter_max_tokens,
@@ -337,11 +350,13 @@ async def _run_analysis(
         result = await client.analyze(query, context)
     except Exception:
         log.exception("AI-анализ не удался")
-        await send_text("😔 AI не ответил. Попробуй позже или напиши проще.")
+        await send_text(t("analyze.failed"))
         return
     finally:
         typing_task.cancel()
-    await send_text(f"🤖 <b>Анализ</b>\n\n{markdown_to_html(result)}{AI_DISCLAIMER}")
+    await send_text(
+        f"{t('analyze.title')}\n\n{markdown_to_html(result)}{t('analyze.disclaimer')}"
+    )
 
 
 async def _typing_loop(bot: Bot, chat_id: int) -> None:

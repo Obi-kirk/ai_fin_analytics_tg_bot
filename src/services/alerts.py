@@ -17,6 +17,7 @@ from src.database.models import Alert
 from src.handlers.crypto import COINS
 from src.handlers.rate import fetch_fx
 from src.handlers.stock import fetch_stock
+from src.i18n import t
 from src.services.financial_api import CoinGeckoClient, make_session
 
 log = logging.getLogger(__name__)
@@ -24,19 +25,23 @@ log = logging.getLogger(__name__)
 
 def _alert_message(alert: Alert, price: float) -> str:
     """Текст уведомления: для %-алерта — изменение от базовой цены."""
-    arrow = "выше" if alert.direction == "above" else "ниже"
+    arrow = t("alerts.above") if alert.direction == "above" else t("alerts.below")
     if alert.mode == "percent" and alert.baseline_price:
         change_pct = (price - alert.baseline_price) / alert.baseline_price * 100
-        return (
-            "🔔 <b>Алерт сработал</b>\n"
-            f"{alert.symbol}: цена <b>${price:,.2f}</b> — изменилась на "
-            f"<b>{change_pct:+.2f}%</b> ({arrow} порога {alert.target_price:,.2f}%)\n"
-            "\nУправление: /alerts"
+        return t(
+            "alerts.fired",
+            symbol=alert.symbol,
+            price=f"{price:,.2f}",
+            pct=f"{change_pct:+.2f}",
+            arrow=arrow,
+            target=f"{alert.target_price:,.2f}",
         )
-    return (
-        "🔔 <b>Алерт сработал</b>\n"
-        f"{alert.symbol}: <b>${price:,.2f}</b> — {arrow} порога "
-        f"<b>${alert.target_price:,.2f}</b>\n\nУправление: /alerts"
+    return t(
+        "alerts.fired_abs",
+        symbol=alert.symbol,
+        price=f"{price:,.2f}",
+        arrow=arrow,
+        target=f"{alert.target_price:,.2f}",
     )
 
 

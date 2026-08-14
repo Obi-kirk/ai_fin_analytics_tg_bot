@@ -32,6 +32,7 @@ class Settings(BaseSettings):
 
     # Поведение бота
     rate_limit_per_minute: int = 10
+    default_language: str = "ru"  # язык по умолчанию: "ru" | "en"
     cache_ttl_fx_seconds: int = 3600  # валюты: 1 час
     cache_ttl_stock_seconds: int = 600  # акции/крипта: 10 минут
     cache_ttl_fundamental_seconds: int = 1800  # профиль/новости: 30 минут

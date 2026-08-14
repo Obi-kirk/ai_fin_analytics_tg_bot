@@ -22,6 +22,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from src.config.settings import get_settings
 from src.handlers.crypto import fetch_crypto
+from src.i18n import t
 from src.services.cache import TTLCache
 from src.services.financial_api import (
     CBR_CURRENCIES,
@@ -35,7 +36,7 @@ log = logging.getLogger(__name__)
 router = Router()
 
 # Рубль — базовая валюта ЦБ РФ, курса в XML нет
-_FX_RUB = FxQuote(code="RUB", name="Российский рубль", value=1.0, nominal=1)
+_FX_RUB = FxQuote(code="RUB", name="RUB", value=1.0, nominal=1)
 
 # Валюты для выбора в диалоге конвертации (порядок кнопок)
 CONVERT_CURRENCIES = (
@@ -84,7 +85,9 @@ def currency_kb(prefix: str, exclude: str | None = None) -> InlineKeyboardMarkup
                 for c in codes[i : i + 3]
             ]
         )
-    builder.row(InlineKeyboardButton(text="❌ Отмена", callback_data="conv:cancel"))
+    builder.row(
+        InlineKeyboardButton(text=t("convert.btn.cancel"), callback_data="conv:cancel")
+    )
     return builder.as_markup()
 
 
@@ -92,7 +95,7 @@ async def _ask_from(callback: CallbackQuery, state: FSMContext) -> None:
     """Спрашивает валюту «из» (после ввода суммы)."""
     await state.set_state(ConvertState.from_code)
     await callback.message.edit_text(
-        "Из какой валюты переводим?", reply_markup=currency_kb("cvfrom")
+        t("convert.ask_from"), reply_markup=currency_kb("cvfrom")
     )
     await callback.answer()
 
@@ -106,7 +109,9 @@ def amount_kb() -> InlineKeyboardMarkup:
             for n in _AMOUNT_PRESETS
         ]
     )
-    builder.row(InlineKeyboardButton(text="❌ Отмена", callback_data="conv:cancel"))
+    builder.row(
+        InlineKeyboardButton(text=t("convert.btn.cancel"), callback_data="conv:cancel")
+    )
     return builder.as_markup()
 
 
@@ -115,8 +120,7 @@ async def _start_dialog(callback: CallbackQuery, state: FSMContext) -> None:
     await state.clear()
     await state.set_state(ConvertState.from_code)
     await callback.message.edit_text(
-        "💱 <b>Конвертация</b>\n\nИз какого актива переводим?",
-        reply_markup=currency_kb("cvfrom"),
+        t("convert.start"), reply_markup=currency_kb("cvfrom")
     )
     await callback.answer()
 
@@ -144,7 +148,11 @@ def _retry_kb() -> InlineKeyboardMarkup:
     """Кнопка «Ещё раз» при ошибке получения курсов."""
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="💱 Ещё раз", callback_data="conv:start")]
+            [
+                InlineKeyboardButton(
+                    text=t("convert.btn.retry"), callback_data="conv:start"
+                )
+            ]
         ]
     )
 
@@ -160,13 +168,13 @@ async def on_conv_amount_preset(
     to_code = data.get("to_code")
     await state.clear()
     if not from_code or not to_code:
-        await callback.message.edit_text("Диалог устарел, начни заново.")
+        await callback.message.edit_text(t("convert.stale"))
         await callback.answer()
         return
     text = await _do_convert(from_code, to_code, amount, cache)
     if text is None:
         await callback.message.edit_text(
-            "😔 Не удалось получить курсы. Попробуй позже.", reply_markup=_retry_kb()
+            t("convert.fetch_failed"), reply_markup=_retry_kb()
         )
         await callback.answer()
         return
@@ -185,21 +193,21 @@ async def on_convert_amount(
     try:
         amount = float(raw)
     except ValueError:
-        await message.answer("Это не похоже на число. Попробуй ещё раз.")
+        await message.answer(t("convert.bad_number"))
         return
     if not 0 < amount <= _AMOUNT_MAX:
-        await message.answer("Сумма должна быть больше нуля и не слишком большой.")
+        await message.answer(t("convert.bad_amount"))
         return
     data = await state.get_data()
     from_code = data.get("from_code")
     to_code = data.get("to_code")
     await state.clear()
     if not from_code or not to_code:
-        await message.answer("Диалог устарел, начни заново: /convert")
+        await message.answer(t("convert.stale_cmd"))
         return
     text = await _do_convert(from_code, to_code, amount, cache)
     if text is None:
-        await message.answer("😔 Не удалось получить курсы. Попробуй позже.")
+        await message.answer(t("convert.fetch_failed"))
         return
     await message.answer(text, reply_markup=convert_kb(amount, from_code, to_code))
 
@@ -209,12 +217,12 @@ async def on_conv_from(callback: CallbackQuery, state: FSMContext) -> None:
     """Принимает валюту «из» и спрашивает валюту «в»."""
     from_code = callback.data.split(":", 1)[1]
     if from_code not in CONVERT_OPTIONS:
-        await callback.answer("Актив не поддерживается.")
+        await callback.answer(t("convert.unsupported"))
         return
     await state.update_data(from_code=from_code)
     await state.set_state(ConvertState.to_code)
     await callback.message.edit_text(
-        f"Из <b>{from_code}</b>. В какую валюту переводим?",
+        t("convert.from_to", code=from_code),
         reply_markup=currency_kb("cvto", exclude=from_code),
     )
     await callback.answer()
@@ -227,14 +235,13 @@ async def on_conv_to(callback: CallbackQuery, state: FSMContext) -> None:
     data = await state.get_data()
     from_code: str | None = data.get("from_code")
     if not from_code:
-        await callback.message.edit_text("Диалог устарел, начни заново.")
+        await callback.message.edit_text(t("convert.stale"))
         await callback.answer()
         return
     await state.update_data(to_code=to_code)
     await state.set_state(ConvertState.amount)
     await callback.message.edit_text(
-        f"<b>{from_code} → {to_code}</b>. Введи сумму или выбери готовую:",
-        reply_markup=amount_kb(),
+        t("convert.ask_amount", f=from_code, t=to_code), reply_markup=amount_kb()
     )
     await callback.answer()
 
@@ -243,7 +250,7 @@ async def on_conv_to(callback: CallbackQuery, state: FSMContext) -> None:
 async def on_conv_cancel(callback: CallbackQuery, state: FSMContext) -> None:
     """Отменяет диалог перевода валют."""
     await state.clear()
-    await callback.message.edit_text("❌ Перевод отменён.")
+    await callback.message.edit_text(t("convert.cancelled"))
     await callback.answer()
 
 
@@ -252,10 +259,10 @@ async def cmd_cancel(message: Message, state: FSMContext) -> None:
     """Отменяет активный диалог (/convert)."""
     current = await state.get_state()
     if current is None:
-        await message.answer("Нет активного диалога.")
+        await message.answer(t("convert.no_dialog"))
         return
     await state.clear()
-    await message.answer("❌ Отменено.")
+    await message.answer(t("convert.cancelled_short"))
 
 
 def parse_convert_args(text: str) -> tuple[float, str, str] | None:
@@ -342,9 +349,12 @@ def format_convert(
 ) -> str:
     """Форматирует результат конвертации для Telegram (HTML)."""
     result = convert_amount(amount, from_value, to_value)
-    return (
-        f"💱 <b>{_format_money(amount)} {from_code}</b> = "
-        f"<b>{_format_money(result)} {to_code}</b>\n\nИсточник: ЦБ РФ, CoinGecko"
+    return t(
+        "convert.result",
+        amount=_format_money(amount),
+        from_code=from_code,
+        result=_format_money(result),
+        to_code=to_code,
     )
 
 
@@ -354,13 +364,17 @@ def convert_kb(amount: float, from_code: str, to_code: str) -> InlineKeyboardMar
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="🔁 Поменять",
+                    text=t("convert.btn.swap"),
                     callback_data=f"conv:swap|{amount}|{to_code}|{from_code}",
                 ),
-                InlineKeyboardButton(text="💱 Ещё раз", callback_data="conv:start"),
+                InlineKeyboardButton(
+                    text=t("convert.btn.retry"), callback_data="conv:start"
+                ),
             ],
             [
-                InlineKeyboardButton(text="↩️ Меню", callback_data="submenu:fx"),
+                InlineKeyboardButton(
+                    text=t("convert.btn.back"), callback_data="submenu:fx"
+                ),
             ],
         ]
     )
@@ -375,7 +389,7 @@ async def on_conv_swap(callback: CallbackQuery, cache: TTLCache) -> None:
         from_rate = await _get_convert_rate(from_code, cache)
         to_rate = await _get_convert_rate(to_code, cache)
     except Exception:  # noqa: BLE001 — граница внешнего API, ошибка уже залогирована
-        await callback.answer("😔 Не удалось получить курсы. Попробуй позже.")
+        await callback.answer(t("convert.fetch_failed"))
         return
     await callback.message.edit_text(
         format_convert(amount, from_code, to_code, from_rate, to_rate),
@@ -392,20 +406,20 @@ async def cmd_convert(message: Message, state: FSMContext, cache: TTLCache) -> N
         await state.clear()
         await state.set_state(ConvertState.from_code)
         await message.answer(
-            "💱 <b>Конвертация</b>\n\nИз какого актива переводим?\n"
-            "Или одной командой: /convert 100 USD RUB",
-            reply_markup=currency_kb("cvfrom"),
+            t("convert.start_hint"), reply_markup=currency_kb("cvfrom")
         )
         return
     amount, from_code, to_code = args
     if from_code not in CONVERT_OPTIONS or to_code not in CONVERT_OPTIONS:
-        await message.answer(f"Доступны: {', '.join(sorted(CONVERT_OPTIONS))}")
+        await message.answer(
+            t("convert.available", assets=", ".join(sorted(CONVERT_OPTIONS)))
+        )
         return
     try:
         from_rate = await _get_convert_rate(from_code, cache)
         to_rate = await _get_convert_rate(to_code, cache)
     except Exception:  # noqa: BLE001 — граница внешнего API, ошибка уже залогирована
-        await message.answer("😔 Не удалось получить курсы. Попробуй позже.")
+        await message.answer(t("convert.fetch_failed"))
         return
     await message.answer(format_convert(amount, from_code, to_code, from_rate, to_rate))
 
@@ -420,8 +434,11 @@ async def cmd_rate(message: Message, cache: TTLCache) -> None:
     code = args[1].strip().upper()
     if code not in CBR_CURRENCIES:
         await message.answer(
-            f"Валюта {code} не поддерживается. "
-            f"Доступны: {', '.join(sorted(CBR_CURRENCIES))}"
+            t(
+                "fx.not_supported",
+                code=code,
+                currencies=", ".join(sorted(CBR_CURRENCIES)),
+            )
         )
         return
 
@@ -432,7 +449,7 @@ async def cmd_rate(message: Message, cache: TTLCache) -> None:
             key, lambda: fetch_fx(code), settings.cache_ttl_fx_seconds
         )
     except Exception:  # noqa: BLE001 — граница внешнего API, ошибка уже залогирована
-        await message.answer("😔 Не удалось получить курс от ЦБ РФ. Попробуй позже.")
+        await message.answer(t("fx.fetch_failed"))
         return
     await message.answer(format_fx(quote))
 
@@ -455,22 +472,24 @@ async def _send_all_rates(message: Message, cache: TTLCache) -> None:
         *[fetch_fx(code) for code in CBR_CURRENCIES],
         return_exceptions=True,
     )
-    lines = ["💱 <b>Курсы ЦБ РФ</b>\n"]
+    lines = [t("fx.all_title") + "\n"]
     for code, quote in zip(sorted(CBR_CURRENCIES), quotes):
         if isinstance(quote, Exception):
             log.warning("Не удалось получить курс %s от ЦБ РФ", code)
             continue
         lines.append(_fx_short_line(quote))
     if len(lines) == 1:
-        await message.answer("😔 Не удалось получить курсы. Попробуй позже.")
+        await message.answer(t("fx.all_failed"))
         return
-    lines.append("\nПодробнее: /rate USD")
+    lines.append(t("fx.more"))
     await message.answer("\n".join(lines))
 
 
 def format_fx(quote: FxQuote) -> str:
     """Форматирует курс валюты за 1 единицу для Telegram (HTML)."""
-    return (
-        f"💱 <b>{quote.name}</b> ({quote.code})\n"
-        f"Курс: <b>{_format_rate(quote.value)} ₽</b>\n\nИсточник: ЦБ РФ"
+    return t(
+        "fx.format",
+        name=quote.name,
+        code=quote.code,
+        rate=_format_rate(quote.value),
     )

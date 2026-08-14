@@ -17,6 +17,7 @@ from sqlalchemy import select
 from src.config.settings import get_settings
 from src.database.db import get_session
 from src.database.models import User
+from src.i18n import set_lang
 
 log = logging.getLogger(__name__)
 
@@ -52,12 +53,14 @@ class UsersMiddleware(BaseMiddleware):
         self.stats = stats
         self._known: set[int] = set()
         self._roles: dict[int, str] = {}
+        self._langs: dict[int, str] = {}
         self._banned: dict[int, float] = {}
 
     def invalidate(self, user_id: int) -> None:
         """Сбрасывает кэш пользователя (например, после смены роли)."""
         self._known.discard(user_id)
         self._roles.pop(user_id, None)
+        self._langs.pop(user_id, None)
         self._banned.pop(user_id, None)
 
     async def __call__(
@@ -85,6 +88,8 @@ class UsersMiddleware(BaseMiddleware):
         role, is_admin = await self._track_user(user_id, event)
         data["role"] = role
         data["is_admin"] = is_admin
+        data["lang"] = self._langs.get(user_id, get_settings().default_language)
+        set_lang(data["lang"])
         if await self._is_banned(user_id):
             log.info("Отклонён запрос забаненного пользователя id=%s", user_id)
             return None
@@ -117,6 +122,7 @@ class UsersMiddleware(BaseMiddleware):
                         telegram_id=user_id,
                         first_name=first_name,
                         username=username,
+                        language=get_settings().default_language,
                     )
                 )
                 role = "user"
@@ -124,6 +130,8 @@ class UsersMiddleware(BaseMiddleware):
                 user.first_name = first_name or user.first_name
                 user.username = username or user.username
                 role = user.role or "user"
+                if user.language:
+                    self._langs[user_id] = user.language
             await session.commit()
         self._known.add(user_id)
         self._roles[user_id] = role

@@ -34,6 +34,7 @@ class User(Base):
     role: Mapped[str] = mapped_column(
         String(16), default="user", server_default="user", nullable=False
     )
+    language: Mapped[str | None] = mapped_column(String(8), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, server_default="now()"
     )

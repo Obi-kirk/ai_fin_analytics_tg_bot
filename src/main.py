@@ -22,11 +22,13 @@ from src.handlers.crypto import router as crypto_router
 from src.handlers.digest import router as digest_router
 from src.handlers.errors import router as errors_router
 from src.handlers.help import router as help_router
+from src.handlers.lang import router as lang_router
 from src.handlers.menu import router as menu_router
 from src.handlers.portfolio import router as portfolio_router
 from src.handlers.rate import router as rate_router
 from src.handlers.start import router as start_router
 from src.handlers.stock import router as stock_router
+from src.i18n import t
 from src.middleware.query_log import QueryLogMiddleware
 from src.middleware.throttling import ThrottlingMiddleware
 from src.middleware.users import BotStats, UsersMiddleware
@@ -63,39 +65,36 @@ def setup_logging() -> None:
 async def _setup_bot_commands(bot: Bot, admin_id: int | None) -> None:
     """Список команд в интерфейсе Telegram: общие и админские (отдельным scope)."""
     user_commands = [
-        BotCommand(command="start", description="Главное меню"),
-        BotCommand(command="rate", description="Курс валюты: /rate USD"),
-        BotCommand(command="convert", description="Конвертер: /convert 100 USD RUB"),
-        BotCommand(command="stock", description="Цена акции: /stock AAPL"),
-        BotCommand(command="crypto", description="Цена крипты: /crypto BTC"),
-        BotCommand(command="chart", description="График цены: /chart BTC"),
-        BotCommand(command="trending", description="Топ трендовых монет"),
-        BotCommand(command="top", description="Топ по капитализации"),
-        BotCommand(command="news", description="Новости по тикеру: /news AAPL"),
-        BotCommand(command="analyze", description="AI-анализ: /analyze BTC"),
-        BotCommand(command="portfolio", description="Мой портфель"),
-        BotCommand(command="alert", description="Алерт: /alert BTC 70000"),
-        BotCommand(command="alerts", description="Мои алерты"),
-        BotCommand(command="digest", description="Дневной дайджест"),
-        BotCommand(command="myrole", description="Моя роль"),
-        BotCommand(command="help", description="Справка"),
+        BotCommand(command="start", description=t("cmd.start")),
+        BotCommand(command="rate", description=t("cmd.rate")),
+        BotCommand(command="convert", description=t("cmd.convert")),
+        BotCommand(command="stock", description=t("cmd.stock")),
+        BotCommand(command="crypto", description=t("cmd.crypto")),
+        BotCommand(command="chart", description=t("cmd.chart")),
+        BotCommand(command="trending", description=t("cmd.trending")),
+        BotCommand(command="top", description=t("cmd.top")),
+        BotCommand(command="news", description=t("cmd.news")),
+        BotCommand(command="analyze", description=t("cmd.analyze")),
+        BotCommand(command="portfolio", description=t("cmd.portfolio")),
+        BotCommand(command="alert", description=t("cmd.alert")),
+        BotCommand(command="alerts", description=t("cmd.alerts")),
+        BotCommand(command="digest", description=t("cmd.digest")),
+        BotCommand(command="myrole", description=t("cmd.myrole")),
+        BotCommand(command="lang", description=t("cmd.lang")),
+        BotCommand(command="help", description=t("cmd.help")),
     ]
     await bot.set_my_commands(user_commands)
     if admin_id:
         await bot.set_my_commands(
             [
-                BotCommand(command="admin", description="Панель администратора"),
-                BotCommand(command="users", description="Список пользователей"),
-                BotCommand(
-                    command="broadcast", description="Рассылка: /broadcast текст"
-                ),
-                BotCommand(command="ban", description="Бан: /ban id"),
-                BotCommand(command="unban", description="Разбан: /unban id"),
-                BotCommand(command="cachestats", description="Статистика кэша"),
-                BotCommand(command="recent", description="Последние запросы"),
-                BotCommand(
-                    command="setrole", description="Назначить роль: /setRole id role"
-                ),
+                BotCommand(command="admin", description=t("cmd.admin")),
+                BotCommand(command="users", description=t("cmd.users")),
+                BotCommand(command="broadcast", description=t("cmd.broadcast")),
+                BotCommand(command="ban", description=t("cmd.ban")),
+                BotCommand(command="unban", description=t("cmd.unban")),
+                BotCommand(command="cachestats", description=t("cmd.cachestats")),
+                BotCommand(command="recent", description=t("cmd.recent")),
+                BotCommand(command="setrole", description=t("cmd.setrole")),
             ],
             scope=BotCommandScopeChat(chat_id=admin_id),
         )
@@ -130,6 +129,7 @@ async def main() -> None:
     dp.include_router(admin_router)
     dp.include_router(start_router)
     dp.include_router(help_router)
+    dp.include_router(lang_router)
     dp.include_router(menu_router)
     dp.include_router(rate_router)
     dp.include_router(portfolio_router)

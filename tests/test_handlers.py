@@ -344,25 +344,31 @@ class TestNews:
 
 class TestDisclaimer:
     def test_start_disclaimer_has_key_phrases(self) -> None:
-        from src.handlers.start import DISCLAIMER_TEXT
+        from src.i18n import t
 
-        assert "не является финансовой консультацией" in DISCLAIMER_TEXT
-        assert "ЦБ РФ" in DISCLAIMER_TEXT
-        assert "Ответственность" in DISCLAIMER_TEXT
+        text = t("start.disclaimer")
+
+        assert "не является финансовой консультацией" in text
+        assert "ЦБ РФ" in text
+        assert "Ответственность" in text
 
     def test_start_disclaimer_is_html_safe(self) -> None:
-        from src.handlers.start import DISCLAIMER_TEXT
+        from src.i18n import t
 
-        assert "**" not in DISCLAIMER_TEXT
-        assert "<b>" in DISCLAIMER_TEXT
+        text = t("start.disclaimer")
+
+        assert "**" not in text
+        assert "<b>" in text
 
     def test_ai_disclaimer_appended(self) -> None:
-        from src.handlers.analyze import AI_DISCLAIMER
+        from src.i18n import t
 
-        assert "не инвестиционная рекомендация" in AI_DISCLAIMER
-        assert AI_DISCLAIMER.startswith("\n\n")
+        text = t("analyze.disclaimer")
+
+        assert "не инвестиционная рекомендация" in text
+        assert text.startswith("\n\n")
 
     def test_help_mentions_disclaimer(self) -> None:
-        from src.handlers.help import HELP_TEXT
+        from src.i18n import t
 
-        assert "не является инвестиционной рекомендацией" in HELP_TEXT
+        assert "не является инвестиционной рекомендацией" in t("start.help_text")

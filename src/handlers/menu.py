@@ -19,6 +19,7 @@ from src.handlers.crypto import fetch_crypto, format_crypto
 from src.handlers.portfolio import open_portfolio
 from src.handlers.rate import fetch_fx, format_fx
 from src.handlers.stock import fetch_stock, format_stock, resolve_stock_symbol
+from src.i18n import t
 from src.services.cache import TTLCache
 from src.services.financial_api import ApiRateLimitError
 
@@ -27,14 +28,41 @@ router = Router()
 
 # ---------------------------------------------------------------- reply-меню
 
-MAIN_MENU = ReplyKeyboardMarkup(
-    keyboard=[
-        [KeyboardButton(text="💱 Курсы"), KeyboardButton(text="📈 Акции")],
-        [KeyboardButton(text="🪙 Крипта"), KeyboardButton(text="🤖 AI-анализ")],
-        [KeyboardButton(text="📁 Портфель"), KeyboardButton(text="❓ Помощь")],
-    ],
-    resize_keyboard=True,
-)
+# Тексты reply-кнопок на всех языках (клавиатура в чате не обновляется сама)
+_MENU_BUTTONS = {
+    "fx": ("💱 Курсы", "💱 Rates"),
+    "stock": ("📈 Акции", "📈 Stocks"),
+    "crypto": ("🪙 Крипта", "🪙 Crypto"),
+    "analyse": ("🤖 AI-анализ", "🤖 AI Analysis"),
+    "portfolio": ("📁 Портфель", "📁 Portfolio"),
+    "help": ("❓ Помощь", "❓ Help"),
+}
+
+# Каждый текст кнопки -> вид (для любых языков, чтобы не ломать старую клавиатуру)
+_MENU_TEXT_TO_KIND = {
+    text: kind for kind, texts in _MENU_BUTTONS.items() for text in texts
+}
+
+
+def main_menu_kb() -> ReplyKeyboardMarkup:
+    """Reply-клавиатура главного меню на текущем языке."""
+    t_fx = t("menu.btn.fx")
+    t_stock = t("menu.btn.stock")
+    t_crypto = t("menu.btn.crypto")
+    t_analyse = t("menu.btn.analyse")
+    t_portfolio = t("menu.btn.portfolio")
+    t_help = t("menu.btn.help")
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text=t_fx), KeyboardButton(text=t_stock)],
+            [KeyboardButton(text=t_crypto), KeyboardButton(text=t_analyse)],
+            [KeyboardButton(text=t_portfolio), KeyboardButton(text=t_help)],
+        ],
+        resize_keyboard=True,
+    )
+
+
+MAIN_MENU = main_menu_kb()
 
 # ------------------------------------------------------- наборы для подменю
 
@@ -86,12 +114,15 @@ ANALYSE_GROUP_TITLES = {
     "crypto": "🪙 Крипта",
 }
 
-MENU_TITLES = {
-    "fx": "💱 Выбери валюту",
-    "stock": "📈 Выбери акцию или индекс",
-    "crypto": "🪙 Выбери монету",
-    "analyse": "🤖 Выбери категорию для AI-анализа",
-}
+
+def analyse_group_title(group: str) -> str:
+    """Название категории AI-анализа на текущем языке."""
+    return t(f"menu.group.{group}")
+
+
+def menu_title(kind: str) -> str:
+    """Заголовок подменю на текущем языке."""
+    return t(f"menu.title.{kind}")
 
 
 def submenu_kb(kind: str) -> InlineKeyboardMarkup:
@@ -99,7 +130,7 @@ def submenu_kb(kind: str) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     if kind == "fx":
         builder.row(
-            InlineKeyboardButton(text="💱 Перевод валют", callback_data="conv:start")
+            InlineKeyboardButton(text=t("menu.btn.convert"), callback_data="conv:start")
         )
         for i in range(0, len(CURRENCIES_TOP10), 4):
             builder.row(
@@ -131,7 +162,7 @@ def submenu_kb(kind: str) -> InlineKeyboardMarkup:
         builder.row(
             *[
                 InlineKeyboardButton(
-                    text=ANALYSE_GROUP_TITLES[g], callback_data=f"analyse_cat:{g}"
+                    text=analyse_group_title(g), callback_data=f"analyse_cat:{g}"
                 )
                 for g in ANALYSE_GROUPS
             ]
@@ -149,20 +180,30 @@ def refresh_kb(cache_key: str) -> InlineKeyboardMarkup:
     symbol = cache_key.split(":", 1)[1]
     builder = InlineKeyboardBuilder()
     row1 = [
-        InlineKeyboardButton(text="🔄 Обновить", callback_data=f"refresh:{cache_key}")
+        InlineKeyboardButton(
+            text=t("menu.btn.refresh"), callback_data=f"refresh:{cache_key}"
+        )
     ]
     if kind == "stock":
         row1.append(
-            InlineKeyboardButton(text="📰 Новости", callback_data=f"news:{symbol}")
+            InlineKeyboardButton(
+                text=t("menu.btn.news"), callback_data=f"news:{symbol}"
+            )
         )
     elif kind == "crypto":
         row1.append(
-            InlineKeyboardButton(text="📊 График", callback_data=f"chart:{symbol}")
+            InlineKeyboardButton(
+                text=t("menu.btn.chart"), callback_data=f"chart:{symbol}"
+            )
         )
     builder.row(*row1)
     builder.row(
-        InlineKeyboardButton(text="➕ В портфель", callback_data=f"pf:add:{symbol}"),
-        InlineKeyboardButton(text="↩️ Меню", callback_data=f"submenu:{kind}"),
+        InlineKeyboardButton(
+            text=t("menu.btn.add_portfolio"), callback_data=f"pf:add:{symbol}"
+        ),
+        InlineKeyboardButton(
+            text=t("menu.btn.back_menu"), callback_data=f"submenu:{kind}"
+        ),
     )
     return builder.as_markup()
 
@@ -179,29 +220,26 @@ def refresh_kb(cache_key: str) -> InlineKeyboardMarkup:
             "🤖 AI-анализ",
             "📁 Портфель",
             "❓ Помощь",
+            "💱 Rates",
+            "📈 Stocks",
+            "🪙 Crypto",
+            "🤖 AI Analysis",
+            "📁 Portfolio",
+            "❓ Help",
         }
     )
 )
 async def on_menu_button(message: Message, cache: TTLCache) -> None:
     """Реагирует на кнопки главного меню."""
     text = message.text or ""
-    kind = {
-        "💱 Курсы": "fx",
-        "📈 Акции": "stock",
-        "🪙 Крипта": "crypto",
-        "🤖 AI-анализ": "analyse",
-        "📁 Портфель": "portfolio",
-        "❓ Помощь": "help",
-    }[text]
+    kind = _MENU_TEXT_TO_KIND[text]
     if kind == "help":
-        from src.handlers.help import HELP_TEXT
-
-        await message.answer(HELP_TEXT, reply_markup=MAIN_MENU)
+        await message.answer(t("start.help_text"), reply_markup=main_menu_kb())
         return
     if kind == "portfolio":
         await open_portfolio(message, cache)
         return
-    await message.answer(MENU_TITLES[kind], reply_markup=submenu_kb(kind))
+    await message.answer(menu_title(kind), reply_markup=submenu_kb(kind))
 
 
 # ------------------------------------------------------------ callback-обработчики
@@ -220,14 +258,10 @@ async def _quote_and_edit(
     try:
         quote = await cache.get_or_set(cache_key, fetch, ttl)
     except ApiRateLimitError:
-        await callback.answer(
-            "⚠️ Превышен лимит API. Попробуй через минуту.", show_alert=True
-        )
+        await callback.answer(t("menu.api_limit"), show_alert=True)
         return
     except Exception:  # noqa: BLE001 — граница внешнего API, ошибка уже залогирована
-        await callback.answer(
-            "😔 Не удалось получить данные. Попробуй позже.", show_alert=True
-        )
+        await callback.answer(t("menu.fetch_failed"), show_alert=True)
         return
     text = render(quote) if render_arg is None else render(render_arg, quote)
     await callback.message.edit_text(
@@ -287,7 +321,7 @@ async def on_crypto(callback: CallbackQuery, cache: TTLCache) -> None:
 async def on_submenu(callback: CallbackQuery) -> None:
     """Возвращает сообщение к подменю выбора (кнопка «↩️ Меню»)."""
     kind = callback.data.split(":", 1)[1]
-    await callback.message.edit_text(MENU_TITLES[kind], reply_markup=submenu_kb(kind))
+    await callback.message.edit_text(menu_title(kind), reply_markup=submenu_kb(kind))
     await callback.answer()
 
 
@@ -305,10 +339,12 @@ async def on_analyse_cat(callback: CallbackQuery) -> None:
             ]
         )
     builder.row(
-        InlineKeyboardButton(text="↩️ Категории", callback_data="submenu:analyse")
+        InlineKeyboardButton(
+            text=t("menu.btn.back_categories"), callback_data="submenu:analyse"
+        )
     )
     await callback.message.edit_text(
-        f"{ANALYSE_GROUP_TITLES[group]}: выбери актив для AI-анализа",
+        t("menu.analyse_choose", title=analyse_group_title(group)),
         reply_markup=builder.as_markup(),
     )
     await callback.answer()
@@ -354,4 +390,4 @@ async def on_refresh(callback: CallbackQuery, cache: TTLCache) -> None:
             render_arg=symbol,
         )
     else:
-        await callback.answer("Не знаю, как обновить это. 🙈")
+        await callback.answer(t("menu.unknown_refresh"))

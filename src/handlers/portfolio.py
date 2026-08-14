@@ -51,6 +51,7 @@ from src.handlers.stock import (
     format_stock,
     resolve_stock_symbol,
 )
+from src.i18n import t
 from src.services.cache import TTLCache
 from src.services.financial_api import (
     CBR_CURRENCIES,
@@ -63,7 +64,11 @@ log = logging.getLogger(__name__)
 router = Router()
 
 TYPE_ICONS = {"fx": "💱", "stock": "📈", "crypto": "🪙"}
-TYPE_TITLES = {"fx": "Валюты", "stock": "Акции", "crypto": "Крипта"}
+
+
+def _type_title(asset_type: str) -> str:
+    """Название категории на текущем языке."""
+    return t(f"portfolio.type.{asset_type}")
 
 
 class AlertState(StatesGroup):
@@ -141,9 +146,9 @@ async def _pf_counts(telegram_id: int) -> dict[str, int]:
             .scalars()
             .all()
         )
-    for t in rows:
-        if t in counts:
-            counts[t] += 1
+    for asset_type in rows:
+        if asset_type in counts:
+            counts[asset_type] += 1
     return counts
 
 
@@ -152,7 +157,7 @@ def _pf_menu_kb(counts: dict[str, int]) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     cat_rows = [
         InlineKeyboardButton(
-            text=f"{TYPE_ICONS[t]} {TYPE_TITLES[t]} ({counts[t]})",
+            text=f"{TYPE_ICONS[t]} {_type_title(t)} ({counts[t]})",
             callback_data=f"pf:cat:{t}",
         )
         for t in ("fx", "stock", "crypto")
@@ -160,16 +165,28 @@ def _pf_menu_kb(counts: dict[str, int]) -> InlineKeyboardMarkup:
     ]
     if cat_rows:
         builder.row(*cat_rows)
-    add_btn = InlineKeyboardButton(text="➕ Добавить", callback_data="pf:add_menu")
+    add_btn = InlineKeyboardButton(
+        text=t("portfolio.btn.add"), callback_data="pf:add_menu"
+    )
     if cat_rows:
         builder.row(
             add_btn,
-            InlineKeyboardButton(text="➖ Удалить", callback_data="pf:remove"),
+            InlineKeyboardButton(
+                text=t("portfolio.btn.remove"), callback_data="pf:remove"
+            ),
         )
-        builder.row(InlineKeyboardButton(text="🔔 Алерты", callback_data="pf:alerts"))
+        builder.row(
+            InlineKeyboardButton(
+                text=t("portfolio.btn.alerts"), callback_data="pf:alerts"
+            )
+        )
     else:
         builder.row(add_btn)
-        builder.row(InlineKeyboardButton(text="🔔 Алерты", callback_data="pf:alerts"))
+        builder.row(
+            InlineKeyboardButton(
+                text=t("portfolio.btn.alerts"), callback_data="pf:alerts"
+            )
+        )
     return builder.as_markup()
 
 
@@ -211,8 +228,8 @@ async def _portfolio_value(telegram_id: int, cache: TTLCache) -> str:
     if usd_total <= 0:
         return ""
     rub = usd_total * usd_rate if usd_rate else None
-    rub_part = f" • <b>{rub:,.0f} ₽</b>" if rub else ""
-    return f"\n💰 Стоимость: <b>${usd_total:,.2f}</b>{rub_part}"
+    rub_part = t("portfolio.value.rub", rub=f"{rub:,.0f}") if rub else ""
+    return t("portfolio.value", usd=f"{usd_total:,.2f}", rub=rub_part)
 
 
 async def _render_pf_menu(
@@ -221,13 +238,9 @@ async def _render_pf_menu(
     """Текст и клавиатура главного меню портфеля."""
     counts = await _pf_counts(telegram_id)
     if sum(counts.values()) == 0:
-        text = (
-            "📁 <b>Мой портфель</b>\n\nПортфель пуст.\n"
-            "Добавь актив: нажми «➕ Добавить» или в меню «📈 Акции» / "
-            "«🪙 Крипта» / «💱 Курсы» у цены актива — «➕ В портфель»."
-        )
+        text = t("portfolio.empty")
     else:
-        text = "📁 <b>Мой портфель</b>\n\nВыбери категорию или действие."
+        text = t("portfolio.choose")
         if cache is not None:
             value_str = await cache.get_or_set(
                 f"pf:value:{telegram_id}",
@@ -311,9 +324,11 @@ def _quote_text(
     if quantity is not None:
         currency = "₽" if asset_type == "fx" else "$"
         value = _per_unit(asset_type, quote) * quantity
-        text += (
-            f"\n\nКоличество: {_fmt_qty(quantity)} • "
-            f"Стоимость: <b>{value:,.2f} {currency}</b>"
+        text += t(
+            "portfolio.qty_line",
+            qty=_fmt_qty(quantity),
+            value=f"{value:,.2f}",
+            currency=currency,
         )
     return text
 
@@ -323,26 +338,38 @@ def _pf_quote_kb(asset_type: str, symbol: str) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     row1 = [
         InlineKeyboardButton(
-            text="🔄 Обновить", callback_data=f"pf:refresh:{asset_type}:{symbol}"
+            text=t("menu.btn.refresh"),
+            callback_data=f"pf:refresh:{asset_type}:{symbol}",
         )
     ]
     if asset_type == "stock":
         row1.append(
-            InlineKeyboardButton(text="📰 Новости", callback_data=f"news:{symbol}")
+            InlineKeyboardButton(
+                text=t("menu.btn.news"), callback_data=f"news:{symbol}"
+            )
         )
     elif asset_type == "crypto":
         row1.append(
-            InlineKeyboardButton(text="📊 График", callback_data=f"chart:{symbol}")
+            InlineKeyboardButton(
+                text=t("menu.btn.chart"), callback_data=f"chart:{symbol}"
+            )
         )
     builder.row(*row1)
     builder.row(
-        InlineKeyboardButton(text="🔔 Алерт", callback_data=f"pf:alert:{symbol}"),
-        InlineKeyboardButton(text="✏️ Кол-во", callback_data=f"pf:qty:{symbol}"),
         InlineKeyboardButton(
-            text="➖ Убрать", callback_data=f"pf:del:{asset_type}:{symbol}"
+            text=t("portfolio.btn.alert"), callback_data=f"pf:alert:{symbol}"
+        ),
+        InlineKeyboardButton(
+            text=t("portfolio.btn.qty"), callback_data=f"pf:qty:{symbol}"
+        ),
+        InlineKeyboardButton(
+            text=t("portfolio.btn.remove_item"),
+            callback_data=f"pf:del:{asset_type}:{symbol}",
         ),
     )
-    builder.row(InlineKeyboardButton(text="↩️ Портфель", callback_data="pf:menu"))
+    builder.row(
+        InlineKeyboardButton(text=t("portfolio.btn.back"), callback_data="pf:menu")
+    )
     return builder.as_markup()
 
 
@@ -398,10 +425,10 @@ async def _trend_hint(asset_type: str, symbol: str, cache: TTLCache) -> str:
     change_30 = _trend_change(history, 30)
     parts = []
     if change_7 is not None:
-        parts.append(f"7д {change_7:+.2f}%")
+        parts.append(f"7d {change_7:+.2f}%")
     if change_30 is not None:
-        parts.append(f"30д {change_30:+.2f}%")
-    return "Тренд: " + ", ".join(parts) if parts else ""
+        parts.append(f"30d {change_30:+.2f}%")
+    return t("portfolio.trend", parts=", ".join(parts)) if parts else ""
 
 
 def _cache_key(asset_type: str, symbol: str) -> str:
@@ -422,14 +449,10 @@ async def _quote_and_edit_pf(
     try:
         quote = await fetch()
     except ApiRateLimitError:
-        await callback.answer(
-            "⚠️ Превышен лимит API. Попробуй через минуту.", show_alert=True
-        )
+        await callback.answer(t("menu.api_limit"), show_alert=True)
         return
     except Exception:  # noqa: BLE001 — граница внешнего API, ошибка уже залогирована
-        await callback.answer(
-            "😔 Не удалось получить данные. Попробуй позже.", show_alert=True
-        )
+        await callback.answer(t("menu.fetch_failed"), show_alert=True)
         return
     quantity = await _get_quantity(callback.from_user.id, symbol)
     trend = await _trend_hint(asset_type, symbol, cache)
@@ -485,12 +508,18 @@ async def _render_cat(
     items = await _list_items(callback.from_user.id, asset_type)
     if not items:
         await callback.message.edit_text(
-            f"{TYPE_ICONS[asset_type]} <b>{TYPE_TITLES[asset_type]}</b>: пусто.\n"
-            "Добавить: нажми «➕ Добавить» или открой цену актива в меню "
-            "и нажми «➕ В портфель».",
+            t(
+                "portfolio.cat.empty",
+                icon=TYPE_ICONS[asset_type],
+                title=_type_title(asset_type),
+            ),
             reply_markup=InlineKeyboardMarkup(
                 inline_keyboard=[
-                    [InlineKeyboardButton(text="↩️ Портфель", callback_data="pf:menu")]
+                    [
+                        InlineKeyboardButton(
+                            text=t("portfolio.btn.back"), callback_data="pf:menu"
+                        )
+                    ]
                 ]
             ),
         )
@@ -501,12 +530,17 @@ async def _render_cat(
         return_exceptions=True,
     )
     lines = [
-        f"{TYPE_ICONS[asset_type]} <b>{TYPE_TITLES[asset_type]}</b> ({len(items)})\n"
+        t(
+            "portfolio.cat.title",
+            icon=TYPE_ICONS[asset_type],
+            title=_type_title(asset_type),
+            n=len(items),
+        )
     ]
     builder = InlineKeyboardBuilder()
     for item, quote in zip(items, quotes):
         if isinstance(quote, Exception):
-            lines.append(f"{item.symbol} — недоступно")
+            lines.append(t("portfolio.unavailable", symbol=item.symbol))
         else:
             lines.append(_short_line(asset_type, item.symbol, quote, item.quantity))
         builder.row(
@@ -517,9 +551,10 @@ async def _render_cat(
         )
     builder.row(
         InlineKeyboardButton(
-            text="🔄 Обновить всё", callback_data=f"pf:cat_refresh:{asset_type}"
+            text=t("portfolio.btn.refresh_all"),
+            callback_data=f"pf:cat_refresh:{asset_type}",
         ),
-        InlineKeyboardButton(text="↩️ Портфель", callback_data="pf:menu"),
+        InlineKeyboardButton(text=t("portfolio.btn.back"), callback_data="pf:menu"),
     )
     await callback.message.edit_text("\n".join(lines), reply_markup=builder.as_markup())
     await callback.answer()
@@ -579,7 +614,9 @@ def _mark_added(markup: InlineKeyboardMarkup, symbol: str) -> InlineKeyboardMark
         for btn in row:
             if btn.callback_data == f"pf:add:{symbol}":
                 new_row.append(
-                    InlineKeyboardButton(text="✅ В портфеле", callback_data="pf:added")
+                    InlineKeyboardButton(
+                        text=t("portfolio.btn.added"), callback_data="pf:added"
+                    )
                 )
             else:
                 new_row.append(btn)
@@ -593,7 +630,7 @@ async def on_pf_add(callback: CallbackQuery) -> None:
     symbol = callback.data.split(":", 2)[2]
     asset_type = resolve_asset_type(symbol)
     if asset_type is None:
-        await callback.answer("Не удалось определить тип актива. 😔", show_alert=True)
+        await callback.answer(t("portfolio.add.unknown_type"), show_alert=True)
         return
     async for session in get_session():
         exists = (
@@ -622,7 +659,9 @@ async def on_pf_add(callback: CallbackQuery) -> None:
             reply_markup=_mark_added(markup, symbol)
         )
     await callback.answer(
-        f"✅ {symbol} добавлен в портфель" if added else f"{symbol} уже в портфеле"
+        t("portfolio.add.toast", symbol=symbol)
+        if added
+        else t("portfolio.add.already", symbol=symbol)
     )
 
 
@@ -673,13 +712,24 @@ async def _added_message(
     added: bool, symbol: str, asset_type: str, quantity: float | None
 ) -> str:
     """Сообщение о результате добавления актива в портфель."""
-    qty_suffix = f" ({_fmt_qty(quantity)} шт.)" if quantity is not None else ""
+    qty_suffix = (
+        t("portfolio.add.qty_suffix", qty=_fmt_qty(quantity))
+        if quantity is not None
+        else ""
+    )
     if added:
-        return (
-            f"✅ {TYPE_ICONS[asset_type]} <b>{symbol}</b> добавлен в портфель "
-            f"({TYPE_TITLES[asset_type]}){qty_suffix}."
+        return t(
+            "portfolio.add.done",
+            icon=TYPE_ICONS[asset_type],
+            symbol=symbol,
+            type=_type_title(asset_type),
+            qty=qty_suffix,
         )
-    return f"{TYPE_ICONS[asset_type]} <b>{symbol}</b> уже в портфеле."
+    return t(
+        "portfolio.add.exists",
+        icon=TYPE_ICONS[asset_type],
+        symbol=symbol,
+    )
 
 
 @router.callback_query(F.data == "pf:add_menu")
@@ -687,10 +737,13 @@ async def on_pf_add_menu(callback: CallbackQuery, state: FSMContext) -> None:
     """Начинает FSM добавления произвольного актива."""
     await state.set_state(AddState.symbol)
     builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text="↩️ Отмена", callback_data="pf:add_cancel"))
+    builder.row(
+        InlineKeyboardButton(
+            text=t("portfolio.btn.cancel"), callback_data="pf:add_cancel"
+        )
+    )
     await callback.message.edit_text(
-        "➕ Введи символ актива (например <b>BTC</b>, <b>AAPL</b>, "
-        "<b>USD</b>, <b>SPX</b>). /cancel — выйти.",
+        t("portfolio.add.prompt"),
         reply_markup=builder.as_markup(),
     )
     await callback.answer()
@@ -702,21 +755,19 @@ async def on_add_symbol(message: Message, state: FSMContext) -> None:
     symbol = (message.text or "").strip().upper().split(" ", 1)[0]
     asset_type = resolve_asset_type(symbol)
     if asset_type is None:
-        await message.answer(
-            "Не распознал актив. Введи тикер акции (AAPL), монету (BTC) "
-            "или валюту (USD)."
-        )
+        await message.answer(t("portfolio.add.bad_symbol"))
         return
     await state.update_data(symbol=symbol, asset_type=asset_type)
     await state.set_state(AddState.quantity)
     builder = InlineKeyboardBuilder()
     builder.row(
-        InlineKeyboardButton(text="⏭️ Пропустить", callback_data="pf:add_skip"),
-        InlineKeyboardButton(text="↩️ Отмена", callback_data="pf:add_cancel"),
+        InlineKeyboardButton(text=t("portfolio.btn.skip"), callback_data="pf:add_skip"),
+        InlineKeyboardButton(
+            text=t("portfolio.btn.cancel"), callback_data="pf:add_cancel"
+        ),
     )
     await message.answer(
-        f"Сколько у тебя <b>{symbol}</b>? Напиши число (например 5 или 0.5) "
-        "или пропусти.",
+        t("portfolio.add.qty_prompt", symbol=symbol),
         reply_markup=builder.as_markup(),
     )
 
@@ -726,7 +777,7 @@ async def on_add_quantity(message: Message, state: FSMContext, cache: TTLCache) 
     """Принимает количество и добавляет актив в портфель."""
     qty = await _parse_qty((message.text or "").strip())
     if qty is None:
-        await message.answer("Это не число. Напиши количество цифрами (например 5).")
+        await message.answer(t("portfolio.add.bad_qty"))
         return
     data = await state.get_data()
     symbol = data["symbol"]
@@ -749,7 +800,7 @@ async def on_pf_add_skip(
     asset_type = data.get("asset_type")
     if not symbol or not asset_type:
         await state.clear()
-        await callback.answer("Диалог устарел. Начни заново.", show_alert=True)
+        await callback.answer(t("portfolio.stale"), show_alert=True)
         return
     added = await _add_item(callback.from_user.id, symbol, asset_type, None)
     await state.clear()
@@ -767,7 +818,9 @@ async def on_pf_add_cancel(
     """Отменяет FSM добавления актива."""
     await state.clear()
     text, kb = await _render_pf_menu(callback.from_user.id, cache)
-    await callback.message.edit_text(f"Отменено.\n\n{text}", reply_markup=kb)
+    await callback.message.edit_text(
+        f"{t('portfolio.cancelled')}\n\n{text}", reply_markup=kb
+    )
     await callback.answer()
 
 
@@ -781,9 +834,13 @@ async def on_pf_qty(callback: CallbackQuery, state: FSMContext) -> None:
     await state.set_state(QtyState.quantity)
     await state.update_data(symbol=symbol)
     builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text="↩️ Отмена", callback_data="pf:qty_cancel"))
+    builder.row(
+        InlineKeyboardButton(
+            text=t("portfolio.btn.cancel"), callback_data="pf:qty_cancel"
+        )
+    )
     await callback.message.edit_text(
-        f"✏️ Сколько у тебя <b>{symbol}</b>? Введи число (например 5 или 0.5).",
+        t("portfolio.qty.prompt", symbol=symbol),
         reply_markup=builder.as_markup(),
     )
     await callback.answer()
@@ -794,7 +851,7 @@ async def on_qty_value(message: Message, state: FSMContext, cache: TTLCache) -> 
     """Принимает количество и сохраняет его."""
     qty = await _parse_qty((message.text or "").strip())
     if qty is None:
-        await message.answer("Это не число. Напиши количество цифрами (например 5).")
+        await message.answer(t("portfolio.add.bad_qty"))
         return
     data = await state.get_data()
     symbol = data["symbol"]
@@ -811,7 +868,7 @@ async def on_qty_value(message: Message, state: FSMContext, cache: TTLCache) -> 
     await state.clear()
     _, kb = await _render_pf_menu(message.from_user.id, cache)
     await message.answer(
-        f"✅ Для <b>{symbol}</b> задано количество {_fmt_qty(qty)}.",
+        t("portfolio.qty.saved", symbol=symbol, qty=_fmt_qty(qty)),
         reply_markup=kb,
     )
 
@@ -823,7 +880,9 @@ async def on_pf_qty_cancel(
     """Отменяет изменение количества."""
     await state.clear()
     text, kb = await _render_pf_menu(callback.from_user.id, cache)
-    await callback.message.edit_text(f"Отменено.\n\n{text}", reply_markup=kb)
+    await callback.message.edit_text(
+        f"{t('portfolio.cancelled')}\n\n{text}", reply_markup=kb
+    )
     await callback.answer()
 
 
@@ -846,19 +905,23 @@ async def _remove_kb(telegram_id: int) -> tuple[str, InlineKeyboardMarkup]:
         )
     if not items:
         return (
-            "📁 Портфель пуст.",
+            t("portfolio.remove.empty"),
             InlineKeyboardMarkup(
                 inline_keyboard=[
-                    [InlineKeyboardButton(text="↩️ Портфель", callback_data="pf:menu")]
+                    [
+                        InlineKeyboardButton(
+                            text=t("portfolio.btn.back"), callback_data="pf:menu"
+                        )
+                    ]
                 ]
             ),
         )
-    lines = ["➖ <b>Выбери актив для удаления</b>\n"]
+    lines = [t("portfolio.remove.title") + "\n"]
     builder = InlineKeyboardBuilder()
     for item in items:
         lines.append(
             f"{TYPE_ICONS.get(item.asset_type, '')} {item.symbol} "
-            f"({TYPE_TITLES[item.asset_type]})"
+            f"({_type_title(item.asset_type)})"
         )
         builder.row(
             InlineKeyboardButton(
@@ -866,7 +929,9 @@ async def _remove_kb(telegram_id: int) -> tuple[str, InlineKeyboardMarkup]:
                 callback_data=f"pf:del:{item.asset_type}:{item.symbol}",
             )
         )
-    builder.row(InlineKeyboardButton(text="↩️ Портфель", callback_data="pf:menu"))
+    builder.row(
+        InlineKeyboardButton(text=t("portfolio.btn.back"), callback_data="pf:menu")
+    )
     return "\n".join(lines), builder.as_markup()
 
 
@@ -885,13 +950,19 @@ async def on_pf_del(callback: CallbackQuery) -> None:
     builder = InlineKeyboardBuilder()
     builder.row(
         InlineKeyboardButton(
-            text="✅ Да, убрать",
+            text=t("portfolio.remove.yes"),
             callback_data=f"pf:confirm_del:{asset_type}:{symbol}",
         ),
-        InlineKeyboardButton(text="↩️ Отмена", callback_data="pf:cancel_del"),
+        InlineKeyboardButton(
+            text=t("portfolio.btn.cancel"), callback_data="pf:cancel_del"
+        ),
     )
     await callback.message.edit_text(
-        f"Удалить {TYPE_ICONS[asset_type]} <b>{symbol}</b> из портфеля?",
+        t(
+            "portfolio.remove.confirm",
+            icon=TYPE_ICONS[asset_type],
+            symbol=symbol,
+        ),
         reply_markup=builder.as_markup(),
     )
     await callback.answer()
@@ -913,7 +984,7 @@ async def on_pf_confirm_del(callback: CallbackQuery, cache: TTLCache) -> None:
         await session.commit()
     text, kb = await _render_pf_menu(callback.from_user.id, cache)
     await callback.message.edit_text(
-        f"✅ {TYPE_ICONS[asset_type]} <b>{symbol}</b> убран из портфеля.\n\n{text}",
+        f"{t('portfolio.remove.done', icon=TYPE_ICONS[asset_type], symbol=symbol)}\n\n{text}",
         reply_markup=kb,
     )
     await callback.answer()
@@ -933,9 +1004,7 @@ async def cmd_add(message: Message, command: CommandObject) -> None:
     symbol = ((command.args or "").strip().upper()).split(" ", 1)[0]
     asset_type = resolve_asset_type(symbol) if symbol else None
     if asset_type is None:
-        await message.answer(
-            "Не понимаю, что добавить. Примеры: /add BTC, /add AAPL, /add USD"
-        )
+        await message.answer(t("portfolio.cmd.add.usage"))
         return
     async for session in get_session():
         exists = (
@@ -959,10 +1028,14 @@ async def cmd_add(message: Message, command: CommandObject) -> None:
         else:
             added = False
     await message.answer(
-        f"📁 <b>{symbol}</b> добавлен в портфель ({TYPE_ICONS[asset_type]}"
-        f"{TYPE_TITLES[asset_type]})."
+        t(
+            "portfolio.cmd.add.done",
+            symbol=symbol,
+            icon=TYPE_ICONS[asset_type],
+            type=_type_title(asset_type),
+        )
         if added
-        else f"📁 <b>{symbol}</b> уже в портфеле."
+        else t("portfolio.cmd.add.exists", symbol=symbol)
     )
 
 
@@ -971,7 +1044,7 @@ async def cmd_remove(message: Message, command: CommandObject) -> None:
     """Убирает актив из портфеля: /remove BTC."""
     symbol = ((command.args or "").strip().upper()).split(" ", 1)[0]
     if not symbol:
-        await message.answer("Укажи актив: /remove BTC")
+        await message.answer(t("portfolio.cmd.remove.usage"))
         return
     async for session in get_session():
         result = await session.execute(
@@ -983,9 +1056,9 @@ async def cmd_remove(message: Message, command: CommandObject) -> None:
         await session.commit()
         removed = result.rowcount > 0
     await message.answer(
-        f"📁 <b>{symbol}</b> убран из портфеля."
+        t("portfolio.cmd.remove.done", symbol=symbol)
         if removed
-        else f"📁 <b>{symbol}</b> не было в портфеле."
+        else t("portfolio.cmd.remove.missing", symbol=symbol)
     )
 
 
@@ -994,11 +1067,7 @@ async def cmd_alert(message: Message, command: CommandObject) -> None:
     """Ставит алерт на цену: /alert BTC 70000 или /alert BTC below 50000."""
     parsed = parse_alert_args(command.args or "")
     if parsed is None:
-        await message.answer(
-            "Формат: /alert <символ> [выше|below] <цена>\n"
-            "Примеры: /alert BTC 70000 (выше 70 000)\n"
-            "         /alert ETH below 3500 (ниже 3 500)"
-        )
+        await message.answer(t("portfolio.alert.usage"))
         return
     symbol, direction, target = parsed
     asset_type = resolve_asset_type(symbol) or "stock"
@@ -1013,10 +1082,18 @@ async def cmd_alert(message: Message, command: CommandObject) -> None:
             )
         )
         await session.commit()
-    arrow = "выше" if direction == "above" else "ниже"
+    arrow = (
+        t("portfolio.alert.above")
+        if direction == "above"
+        else t("portfolio.alert.below")
+    )
     await message.answer(
-        f"🔔 Алерт установлен: <b>{symbol}</b> {arrow} "
-        f"<b>${target:,.2f}</b>\nПроверяется каждые 30 минут. /alerts — список"
+        t(
+            "portfolio.alert.set",
+            symbol=symbol,
+            arrow=arrow,
+            target=f"{target:,.2f}",
+        )
     )
 
 
@@ -1039,12 +1116,12 @@ async def cmd_alerts(message: Message) -> None:
             .all()
         )
     if not alerts:
-        await message.answer("🔕 Активных алертов нет.\nСоздать: /alert BTC 70000")
+        await message.answer(t("portfolio.alert.empty"))
         return
-    lines = ["🔔 <b>Мои алерты</b>\n"]
+    lines = [t("portfolio.alert.title") + "\n"]
     for num, a in enumerate(alerts, 1):
         lines.append(f"• <code>{num}</code>. {_alert_line(a)}")
-    lines.append("\nУбрать: /portfolio → 🔔 Алерты")
+    lines.append(t("portfolio.alert.hint_remove"))
     await message.answer("\n".join(lines))
 
 
@@ -1053,7 +1130,11 @@ async def cmd_alerts(message: Message) -> None:
 
 def _alert_line(a: Alert) -> str:
     """Однострочное описание алерта (без номера — нумерация в списке)."""
-    arrow = "выше" if a.direction == "above" else "ниже"
+    arrow = (
+        t("portfolio.alert.above")
+        if a.direction == "above"
+        else t("portfolio.alert.below")
+    )
     if a.mode == "percent":
         return (
             f"{TYPE_ICONS.get(a.asset_type, '')}"
@@ -1084,26 +1165,30 @@ async def _alerts_text_kb(telegram_id: int) -> tuple[str, InlineKeyboardMarkup]:
         )
     if not alerts:
         return (
-            (
-                "🔕 Активных алертов нет.\n\nСоздать можно из карточки актива — "
-                "кнопка «🔔 Алерт» — или командой: /alert BTC 70000."
-            ),
+            t("portfolio.alert.empty2"),
             InlineKeyboardMarkup(
                 inline_keyboard=[
-                    [InlineKeyboardButton(text="↩️ Портфель", callback_data="pf:menu")]
+                    [
+                        InlineKeyboardButton(
+                            text=t("portfolio.btn.back"), callback_data="pf:menu"
+                        )
+                    ]
                 ]
             ),
         )
-    lines = ["🔔 <b>Мои алерты</b>\n"]
+    lines = [t("portfolio.alert.title") + "\n"]
     builder = InlineKeyboardBuilder()
     for num, a in enumerate(alerts, 1):
         lines.append(f"• <code>{num}</code>. {_alert_line(a)}")
         builder.row(
             InlineKeyboardButton(
-                text=f"🗑 Убрать #{num}", callback_data=f"pf:alert_del:{a.id}"
+                text=t("portfolio.alert.btn_del", num=num),
+                callback_data=f"pf:alert_del:{a.id}",
             )
         )
-    builder.row(InlineKeyboardButton(text="↩️ Портфель", callback_data="pf:menu"))
+    builder.row(
+        InlineKeyboardButton(text=t("portfolio.btn.back"), callback_data="pf:menu")
+    )
     return "\n".join(lines), builder.as_markup()
 
 
@@ -1129,17 +1214,20 @@ async def on_pf_alert_del(callback: CallbackQuery) -> None:
             )
         ).scalar_one_or_none()
     if alert is None:
-        await callback.answer("Алерт не найден.", show_alert=True)
+        await callback.answer(t("portfolio.alert.not_found"), show_alert=True)
         return
     builder = InlineKeyboardBuilder()
     builder.row(
         InlineKeyboardButton(
-            text="✅ Да, удалить", callback_data=f"pf:confirm_alert_del:{alert_id}"
+            text=t("portfolio.alert.yes_del"),
+            callback_data=f"pf:confirm_alert_del:{alert_id}",
         ),
-        InlineKeyboardButton(text="↩️ Отмена", callback_data="pf:cancel_alert_del"),
+        InlineKeyboardButton(
+            text=t("portfolio.btn.cancel"), callback_data="pf:cancel_alert_del"
+        ),
     )
     await callback.message.edit_text(
-        f"Удалить алерт?\n\n{_alert_line(alert)}",
+        t("portfolio.alert.delete_confirm", line=_alert_line(alert)),
         reply_markup=builder.as_markup(),
     )
     await callback.answer()
@@ -1159,7 +1247,7 @@ async def on_pf_confirm_alert_del(callback: CallbackQuery) -> None:
         await session.commit()
     text, kb = await _alerts_text_kb(callback.from_user.id)
     await callback.message.edit_text(
-        f"✅ Алерт <code>{alert_id}</code> удалён.\n\n{text}",
+        f"{t('portfolio.alert.deleted', id=alert_id)}\n\n{text}",
         reply_markup=kb,
     )
     await callback.answer()
@@ -1182,11 +1270,13 @@ async def _cached_price_hint(asset_type: str, symbol: str, cache: TTLCache) -> s
     if quote is None:
         return ""
     if asset_type == "fx":
-        return f"Текущая цена: <b>{quote.value:.2f} ₽</b>\n"
+        return t("portfolio.alert.hint_fx", price=f"{quote.value:.2f}")
     sign = "+" if quote.change_percent >= 0 else ""
-    return (
-        f"Текущая цена: <b>${quote.price:,.2f}</b> "
-        f"({sign}{quote.change_percent:.2f}%)\n"
+    return t(
+        "portfolio.alert.hint",
+        price=f"{quote.price:,.2f}",
+        sign=sign,
+        pct=f"{quote.change_percent:.2f}",
     )
 
 
@@ -1201,14 +1291,20 @@ async def on_pf_alert(
     await state.update_data(symbol=symbol, asset_type=asset_type)
     builder = InlineKeyboardBuilder()
     builder.row(
-        InlineKeyboardButton(text="💰 По цене", callback_data="pf:alert_mode:absolute"),
         InlineKeyboardButton(
-            text="📈 Изменение в %", callback_data="pf:alert_mode:percent"
+            text=t("portfolio.alert.btn_price"), callback_data="pf:alert_mode:absolute"
+        ),
+        InlineKeyboardButton(
+            text=t("portfolio.alert.btn_percent"), callback_data="pf:alert_mode:percent"
         ),
     )
-    builder.row(InlineKeyboardButton(text="↩️ Отмена", callback_data="pf:alert_cancel"))
+    builder.row(
+        InlineKeyboardButton(
+            text=t("portfolio.btn.cancel"), callback_data="pf:alert_cancel"
+        )
+    )
     await callback.message.edit_text(
-        f"🔔 Алерт для <b>{symbol}</b>. Какой тип?",
+        t("portfolio.alert.type_prompt", symbol=symbol),
         reply_markup=builder.as_markup(),
     )
     await callback.answer()
@@ -1225,18 +1321,21 @@ async def on_pf_alert_mode(
     data = await state.get_data()
     symbol = data["symbol"]
     builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text="↩️ Отмена", callback_data="pf:alert_cancel"))
+    builder.row(
+        InlineKeyboardButton(
+            text=t("portfolio.btn.cancel"), callback_data="pf:alert_cancel"
+        )
+    )
     if mode == "percent":
         hint = await _cached_price_hint(data["asset_type"], symbol, cache)
         await callback.message.edit_text(
-            f"📈 На сколько процентов должен измениться <b>{symbol}</b>?\n"
-            f"{hint}Напиши число (например 5 или 3.5).",
+            t("portfolio.alert.percent_prompt", symbol=symbol, hint=hint),
             reply_markup=builder.as_markup(),
         )
     else:
         hint = await _cached_price_hint(data["asset_type"], symbol, cache)
         await callback.message.edit_text(
-            f"🔔 Цена алерта для <b>{symbol}</b>?\n{hint}Напиши число.",
+            t("portfolio.alert.price_prompt", symbol=symbol, hint=hint),
             reply_markup=builder.as_markup(),
         )
     await callback.answer()
@@ -1249,24 +1348,36 @@ async def on_alert_value(message: Message, state: FSMContext) -> None:
     try:
         value = float(raw)
     except ValueError:
-        await message.answer("Это не число. Напиши число цифрами.")
+        await message.answer(t("portfolio.alert.bad_number"))
         return
     if value <= 0:
-        await message.answer("Значение должно быть больше нуля.")
+        await message.answer(t("portfolio.alert.bad_value"))
         return
     await state.update_data(value=value)
     await state.set_state(AlertState.direction)
     data = await state.get_data()
     builder = InlineKeyboardBuilder()
     builder.row(
-        InlineKeyboardButton(text="⬆️ Выше", callback_data="pf:alert_dir:above"),
-        InlineKeyboardButton(text="⬇️ Ниже", callback_data="pf:alert_dir:below"),
+        InlineKeyboardButton(
+            text=t("portfolio.alert.btn_above"), callback_data="pf:alert_dir:above"
+        ),
+        InlineKeyboardButton(
+            text=t("portfolio.alert.btn_below"), callback_data="pf:alert_dir:below"
+        ),
     )
-    builder.row(InlineKeyboardButton(text="↩️ Отмена", callback_data="pf:alert_cancel"))
+    builder.row(
+        InlineKeyboardButton(
+            text=t("portfolio.btn.cancel"), callback_data="pf:alert_cancel"
+        )
+    )
     suffix = "%" if data.get("mode") == "percent" else ""
     await message.answer(
-        f"🔔 <b>{data['symbol']}</b>: {value:g}{suffix}. Сработает, когда цена "
-        "будет выше или ниже?",
+        t(
+            "portfolio.alert.direction",
+            symbol=data["symbol"],
+            value=f"{value:g}",
+            suffix=suffix,
+        ),
         reply_markup=builder.as_markup(),
     )
 
@@ -1282,7 +1393,7 @@ async def on_alert_dir(
     value = data.get("value")
     if not symbol or not value:
         await state.clear()
-        await callback.answer("Диалог устарел. Начни заново.", show_alert=True)
+        await callback.answer(t("portfolio.stale"), show_alert=True)
         return
     asset_type = data.get("asset_type") or resolve_asset_type(symbol) or "stock"
     mode = data.get("mode") or "absolute"
@@ -1304,12 +1415,24 @@ async def on_alert_dir(
         )
         await session.commit()
     await state.clear()
-    arrow = "выше" if direction == "above" else "ниже"
+    arrow = (
+        t("portfolio.alert.above")
+        if direction == "above"
+        else t("portfolio.alert.below")
+    )
     builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text="↩️ Портфель", callback_data="pf:menu"))
+    builder.row(
+        InlineKeyboardButton(text=t("portfolio.btn.back"), callback_data="pf:menu")
+    )
     unit = "%" if mode == "percent" else f"${value:,.2f}"
     await callback.message.edit_text(
-        f"🔔 Алерт установлен: <b>{symbol}</b> {arrow} <b>{value:g}{unit}</b>",
+        t(
+            "portfolio.alert.set2",
+            symbol=symbol,
+            arrow=arrow,
+            value=f"{value:g}",
+            unit=unit,
+        ),
         reply_markup=builder.as_markup(),
     )
     await callback.answer()
@@ -1322,7 +1445,9 @@ async def on_alert_cancel(
     """Отменяет FSM создания алерта."""
     await state.clear()
     text, kb = await _render_pf_menu(callback.from_user.id, cache)
-    await callback.message.edit_text(f"Отменено.\n\n{text}", reply_markup=kb)
+    await callback.message.edit_text(
+        f"{t('portfolio.cancelled')}\n\n{text}", reply_markup=kb
+    )
     await callback.answer()
 
 
@@ -1332,7 +1457,7 @@ async def cmd_remove_alert(message: Message, command: CommandObject) -> None:
     try:
         alert_id = int((command.args or "").strip().split()[0])
     except (ValueError, IndexError):
-        await message.answer("Укажи id алерта: /remove_alert 3 (id видно в /alerts)")
+        await message.answer(t("portfolio.remove_alert.usage"))
         return
     async for session in get_session():
         result = await session.execute(
@@ -1344,7 +1469,7 @@ async def cmd_remove_alert(message: Message, command: CommandObject) -> None:
         await session.commit()
         removed = result.rowcount > 0
     await message.answer(
-        f"✅ Алерт <code>{alert_id}</code> удалён."
+        t("portfolio.alert.deleted", id=alert_id)
         if removed
-        else f"⚠️ Алерт <code>{alert_id}</code> не найден (он твой и активен?)."
+        else t("portfolio.remove_alert.missing", id=alert_id)
     )

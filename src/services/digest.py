@@ -18,6 +18,7 @@ from src.database.models import DigestAsset, DigestSubscription, PortfolioItem
 from src.handlers.crypto import fetch_crypto
 from src.handlers.rate import fetch_fx
 from src.handlers.stock import fetch_stock, resolve_stock_symbol
+from src.i18n import t
 from src.services.cache import TTLCache
 from src.services.financial_api import CBR_CURRENCIES
 
@@ -26,8 +27,6 @@ log = logging.getLogger(__name__)
 DIGEST_FX = ("USD", "EUR", "CNY", "JPY")
 DIGEST_STOCKS = ("AAPL", "NVDA", "MSFT", "TSLA", "META")
 DIGEST_CRYPTO = ("BTC", "ETH", "SOL", "XRP")
-
-DIGEST_DISCLAIMER = "\n\n— <i>Это не инвестиционная рекомендация.</i>"
 
 # Доступные для настройки своего набора (те же источники, что в меню)
 DIGEST_AVAILABLE = {
@@ -129,33 +128,39 @@ async def build_digest(telegram_id: int, cache: TTLCache) -> str:
     Если настроен персональный набор (digest_assets) — используется только
     он; иначе дефолтный топ. Портфель добавляется всегда.
     """
-    lines = ["🌅 <b>Доброе утро! Дневной дайджест</b>\n"]
+    lines = [t("digest.build.title") + "\n"]
     user_assets = await _user_assets(telegram_id)
     sections: list[list[str]] = []
     if user_assets:
         if user_assets.get("fx"):
             sections.append(
-                await _section("💱 <b>Валюты</b>", user_assets["fx"], "fx", cache)
+                await _section(t("digest.section.fx"), user_assets["fx"], "fx", cache)
             )
         if user_assets.get("stock"):
             sections.append(
-                await _section("📈 <b>Акции</b>", user_assets["stock"], "stock", cache)
+                await _section(
+                    t("digest.section.stock"), user_assets["stock"], "stock", cache
+                )
             )
         if user_assets.get("crypto"):
             sections.append(
                 await _section(
-                    "🪙 <b>Крипта</b>", user_assets["crypto"], "crypto", cache
+                    t("digest.section.crypto"), user_assets["crypto"], "crypto", cache
                 )
             )
     else:
         sections.append(
-            await _section("💱 <b>Курсы ЦБ</b>", list(DIGEST_FX), "fx", cache)
+            await _section(t("digest.section.fx_default"), list(DIGEST_FX), "fx", cache)
         )
         sections.append(
-            await _section("📈 <b>Акции</b>", list(DIGEST_STOCKS), "stock", cache)
+            await _section(
+                t("digest.section.stock"), list(DIGEST_STOCKS), "stock", cache
+            )
         )
         sections.append(
-            await _section("🪙 <b>Крипта</b>", list(DIGEST_CRYPTO), "crypto", cache)
+            await _section(
+                t("digest.section.crypto"), list(DIGEST_CRYPTO), "crypto", cache
+            )
         )
     for i, section in enumerate(sections):
         if i:
@@ -176,16 +181,16 @@ async def build_digest(telegram_id: int, cache: TTLCache) -> str:
         )
     if items:
         lines.append("")
-        lines.append("📁 <b>Ваш портфель</b>")
+        lines.append(t("digest.portfolio_title"))
         lines.append("")
         for item in items:
             try:
                 quote = await _fetch_quote(item.asset_type, item.symbol, cache)
                 lines.append(_line(item.asset_type, item.symbol, quote, item.quantity))
             except Exception:  # noqa: BLE001 — один актив не роняет дайджест
-                lines.append(f"{item.symbol} — недоступно")
+                lines.append(t("digest.unavailable", symbol=item.symbol))
 
-    lines.append(DIGEST_DISCLAIMER)
+    lines.append(t("digest.disclaimer"))
     return "\n".join(lines)
 
 

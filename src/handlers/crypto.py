@@ -14,6 +14,7 @@ from aiogram.filters import Command
 from aiogram.types import BufferedInputFile, CallbackQuery, Message
 
 from src.config.settings import get_settings
+from src.i18n import t
 from src.services.cache import TTLCache
 from src.services.financial_api import (
     ApiRateLimitError,
@@ -47,11 +48,11 @@ async def cmd_crypto(message: Message, cache: TTLCache) -> None:
     """Показывает цену криптовалюты, например: /crypto BTC."""
     args = message.text.split(maxsplit=1)
     if len(args) < 2:
-        await message.answer("Укажи монету, например: /crypto BTC или /crypto SOL")
+        await message.answer(t("crypto.usage"))
         return
     raw = args[1].strip().upper()
     if not COIN_RE.match(raw):
-        await message.answer("Некорректное название монеты.")
+        await message.answer(t("crypto.bad_coin"))
         return
 
     settings = get_settings()
@@ -61,12 +62,10 @@ async def cmd_crypto(message: Message, cache: TTLCache) -> None:
             key, lambda: fetch_crypto(raw), settings.cache_ttl_stock_seconds
         )
     except ApiRateLimitError:
-        await message.answer(
-            "⚠️ Превышен лимит запросов к API крипты. Попробуй через минуту."
-        )
+        await message.answer(t("crypto.rate_limit"))
         return
     except Exception:  # noqa: BLE001 — граница внешнего API, ошибка уже залогирована
-        await message.answer("😔 Не удалось получить цену. Попробуй позже.")
+        await message.answer(t("crypto.fetch_failed"))
         return
     await message.answer(format_crypto(raw, quote))
 
@@ -122,7 +121,7 @@ def build_chart_png(symbol: str, prices: list[float]) -> bytes:
 async def _send_chart(message: Message, symbol: str, cache: TTLCache) -> None:
     """Генерирует и отправляет график цены монеты за 30 дней."""
     if not COIN_RE.match(symbol):
-        await message.answer("Некорректное название монеты.")
+        await message.answer(t("crypto.bad_coin"))
         return
     gecko_id = COINS.get(symbol, symbol.lower())
     settings = get_settings()
@@ -133,20 +132,20 @@ async def _send_chart(message: Message, symbol: str, cache: TTLCache) -> None:
             settings.cache_ttl_fundamental_seconds,
         )
     except Exception:  # noqa: BLE001 — граница внешнего API, ошибка уже залогирована
-        await message.answer("😔 Не удалось получить историю цен. Попробуй позже.")
+        await message.answer(t("crypto.chart.failed"))
         return
     if len(history) < 2:
-        await message.answer("😔 Недостаточно данных для графика.")
+        await message.answer(t("crypto.chart.insufficient"))
         return
     try:
         png = build_chart_png(symbol, history)
     except Exception:
         log.exception("Ошибка построения графика %s", symbol)
-        await message.answer("😔 Не удалось построить график.")
+        await message.answer(t("crypto.chart.build_failed"))
         return
     await message.answer_photo(
         BufferedInputFile(png, filename=f"{symbol}.png"),
-        caption=f"📊 <b>{symbol}</b> — цена за 30 дней",
+        caption=t("crypto.chart.caption", symbol=symbol),
     )
 
 
@@ -155,7 +154,7 @@ async def cmd_chart(message: Message, cache: TTLCache) -> None:
     """Показывает график цены монеты за 30 дней, например: /chart BTC."""
     args = message.text.split(maxsplit=1)
     if len(args) < 2:
-        await message.answer("Укажи монету, например: /chart BTC или /chart ETH")
+        await message.answer(t("crypto.chart.usage"))
         return
     await _send_chart(message, args[1].strip().upper(), cache)
 
@@ -170,11 +169,13 @@ async def on_chart_callback(callback: CallbackQuery, cache: TTLCache) -> None:
 
 def format_trending(coins: list[dict]) -> str:
     """Форматирует топ трендовых монет для Telegram (HTML)."""
-    lines = ["🔥 <b>Тренды CoinGecko</b>\n"]
+    lines = [t("crypto.trending.title") + "\n"]
     for i, coin in enumerate(coins[:10], start=1):
         rank = f"#{coin['rank']}" if coin.get("rank") else "—"
-        lines.append(f"{i}. {coin['name']} <b>({coin['symbol']})</b> — ранг {rank}")
-    lines.append("\nПроверь цену: /crypto SYMBOL или AI-анализ в меню.")
+        lines.append(
+            f"{i}. {coin['name']} <b>({coin['symbol']})</b> — {t('crypto.trending.rank')} {rank}"
+        )
+    lines.append(t("crypto.trending.hint"))
     return "\n".join(lines)
 
 
@@ -187,12 +188,10 @@ async def cmd_trending(message: Message, cache: TTLCache) -> None:
             "trending", fetch_trending, settings.cache_ttl_stock_seconds
         )
     except ApiRateLimitError:
-        await message.answer(
-            "⚠️ Превышен лимит запросов к API крипты. Попробуй через минуту."
-        )
+        await message.answer(t("crypto.rate_limit"))
         return
     except Exception:  # noqa: BLE001 — граница внешнего API, ошибка уже залогирована
-        await message.answer("😔 Не удалось получить тренды. Попробуй позже.")
+        await message.answer(t("crypto.trending.failed"))
         return
     await message.answer(format_trending(coins))
 
@@ -220,7 +219,7 @@ async def fetch_top() -> list[dict]:
 
 def format_top(coins: list[dict]) -> str:
     """Форматирует топ монет по капитализации для Telegram (HTML)."""
-    lines = ["🏆 <b>Топ криптовалют по капитализации</b>\n"]
+    lines = [t("crypto.top.title") + "\n"]
     for i, coin in enumerate(coins[:10], start=1):
         change = coin.get("change_percent")
         sign = "+" if change is not None and change >= 0 else ""
@@ -230,9 +229,9 @@ def format_top(coins: list[dict]) -> str:
         lines.append(
             f"{i}. {coin['name']} <b>({coin['symbol']})</b>"
             f"\n   💵 ${coin['price']:,.2f}{change_str}"
-            f"\n   💰 Капитализация: {_format_cap(coin['market_cap'])}"
+            f"\n   {t('crypto.top.cap', cap=_format_cap(coin['market_cap']))}"
         )
-    lines.append("\nПодробнее: /crypto SYMBOL или AI-анализ в меню.")
+    lines.append(t("crypto.top.hint"))
     return "\n".join(lines)
 
 
@@ -245,12 +244,10 @@ async def cmd_top(message: Message, cache: TTLCache) -> None:
             "top", fetch_top, settings.cache_ttl_stock_seconds
         )
     except ApiRateLimitError:
-        await message.answer(
-            "⚠️ Превышен лимит запросов к API крипты. Попробуй через минуту."
-        )
+        await message.answer(t("crypto.rate_limit"))
         return
     except Exception:  # noqa: BLE001 — граница внешнего API, ошибка уже залогирована
-        await message.answer("😔 Не удалось получить топ. Попробуй позже.")
+        await message.answer(t("crypto.top.failed"))
         return
     await message.answer(format_top(coins))
 
@@ -259,8 +256,8 @@ def format_crypto(symbol: str, quote: StockQuote) -> str:
     """Форматирует цену криптовалюты для Telegram (HTML)."""
     sign = "+" if quote.change_percent >= 0 else ""
     change = (
-        f"\nИзменение: {sign}{quote.change_percent:.2f}%"
+        t("crypto.change", sign=sign, pct=f"{quote.change_percent:.2f}")
         if quote.change_percent
         else ""
     )
-    return f"🪙 <b>{symbol}</b>\nЦена: <b>${quote.price:,.2f}</b>{change}"
+    return t("crypto.format", symbol=symbol, price=f"{quote.price:,.2f}", change=change)

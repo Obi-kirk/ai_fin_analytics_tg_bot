@@ -11,6 +11,7 @@ import re
 import aiohttp
 
 from src.config.settings import get_settings
+from src.i18n import t
 from src.services.financial_api import _check_domain
 
 log = logging.getLogger(__name__)
@@ -34,13 +35,10 @@ _INJECTION_PATTERNS = (
     re.compile(r"\bsystem\s+prompt\b", re.IGNORECASE),
 )
 
-_SYSTEM_PROMPT = """Ты — финансовый аналитик в Telegram-боте. Отвечай по-русски, кратко и по делу (до 200 слов).
 
-Правила:
-- Анализируй ТОЛЬКО данные, переданные в контексте сообщения. Ничего не выдумывай.
-- Не давай персональных инвестиционных рекомендаций («покупай/продавай»), только факты и возможные сценарии.
-- Если данных недостаточно — честно скажи об этом.
-- Формат: короткий вывод о текущей ситуации, что влияет на цену, ключевые уровни (если есть данные)."""
+def _system_prompt() -> str:
+    """Системный промпт LLM на текущем языке бота."""
+    return t("llm.system_prompt")
 
 
 def sanitize_user_text(text: str) -> str:
@@ -82,14 +80,10 @@ def build_messages(query: str, context: str) -> list[dict[str, str]]:
     """
     context_limited = context[:MAX_CONTEXT_LENGTH]
     return [
-        {"role": "system", "content": _SYSTEM_PROMPT},
+        {"role": "system", "content": _system_prompt()},
         {
             "role": "user",
-            "content": (
-                f"Данные о активе:\n{context_limited}\n\n"
-                f"Вопрос пользователя: {query}\n"
-                "Дай анализ по этим данным."
-            ),
+            "content": t("llm.user_prompt", context=context_limited, query=query),
         },
     ]
 

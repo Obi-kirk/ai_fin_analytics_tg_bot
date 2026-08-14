@@ -11,6 +11,8 @@ from typing import Any
 from aiogram import BaseMiddleware
 from aiogram.types import CallbackQuery, Message, TelegramObject
 
+from src.i18n import t
+
 log = logging.getLogger(__name__)
 
 WINDOW_SECONDS = 60.0
@@ -44,10 +46,8 @@ class ThrottlingMiddleware(BaseMiddleware):
 
         if user_id is not None and not self._allow(user_id, time.monotonic()):
             if isinstance(event, Message):
-                await event.answer(
-                    "⏳ Слишком часто! Подожди немного и попробуй снова."
-                )
+                await event.answer(t("throttle.message"))
             else:
-                await event.answer("⏳ Слишком часто! Подожди немного.")
+                await event.answer(t("throttle.callback"))
             return None
         return await handler(event, data)

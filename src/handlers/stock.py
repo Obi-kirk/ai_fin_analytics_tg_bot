@@ -16,6 +16,7 @@ from aiogram.types import (
 )
 
 from src.config.settings import get_settings
+from src.i18n import t
 from src.services.cache import TTLCache
 from src.services.financial_api import (
     ApiRateLimitError,
@@ -56,17 +57,12 @@ async def cmd_stock(message: Message, cache: TTLCache) -> None:
     """Показывает цену акции или индекса, например: /stock AAPL."""
     args = message.text.split(maxsplit=1)
     if len(args) < 2:
-        await message.answer(
-            "Укажи тикер, например: /stock AAPL или /stock SPX\n"
-            "Индексы: SPX, DJI, NASDAQ, VIX."
-        )
+        await message.answer(t("stock.usage"))
         return
     raw = args[1].strip().upper()
     symbol = resolve_stock_symbol(raw)
     if not TICKER_RE.match(symbol):
-        await message.answer(
-            f"Тикер {raw} некорректный. Допустимы буквы, цифры, точки, дефис (до 15 символов)."
-        )
+        await message.answer(t("stock.bad_ticker", raw=raw))
         return
 
     settings = get_settings()
@@ -76,12 +72,10 @@ async def cmd_stock(message: Message, cache: TTLCache) -> None:
             key, lambda: fetch_stock(symbol), settings.cache_ttl_stock_seconds
         )
     except ApiRateLimitError:
-        await message.answer(
-            "⚠️ Превышен лимит запросов к API акций. Попробуй через минуту."
-        )
+        await message.answer(t("stock.rate_limit"))
         return
     except Exception:  # noqa: BLE001 — граница внешнего API, ошибка уже залогирована
-        await message.answer("😔 Не удалось получить котировку. Попробуй позже.")
+        await message.answer(t("stock.fetch_failed"))
         return
     await message.answer(format_stock(quote, display=raw))
 
@@ -117,7 +111,7 @@ def _format_news_date(ts: int | None) -> str:
 
 def format_news(symbol: str, news: list[dict], limit: int = 5) -> str:
     """Форматирует новости по тикеру для Telegram (HTML)."""
-    lines = [f"📰 <b>Новости {symbol}</b> (за 10 дней)\n"]
+    lines = [t("stock.news_title", symbol=symbol) + "\n"]
     shown = 0
     for item in news:
         headline = (item.get("headline") or "").strip()
@@ -125,13 +119,13 @@ def format_news(symbol: str, news: list[dict], limit: int = 5) -> str:
         if not headline or not url:
             continue
         date = _format_news_date(item.get("datetime"))
-        link = f'<a href="{url}">читать</a>' if url else ""
+        link = f'<a href="{url}">{t("stock.news.read")}</a>' if url else ""
         lines.append(f"• {date} — {headline} {link}")
         shown += 1
         if shown >= limit:
             break
     if not shown:
-        lines.append("Новостей за этот период нет.")
+        lines.append(t("stock.news.empty"))
     return "\n".join(lines)
 
 
@@ -140,11 +134,11 @@ async def cmd_news(message: Message, cache: TTLCache) -> None:
     """Последние новости по тикеру, например: /news AAPL."""
     args = message.text.split(maxsplit=1)
     if len(args) < 2:
-        await message.answer("Укажи тикер, например: /news AAPL или /news NVDA")
+        await message.answer(t("stock.news.usage"))
         return
     symbol = args[1].strip().upper()
     if not TICKER_RE.match(symbol):
-        await message.answer("Некорректный тикер.")
+        await message.answer(t("stock.bad_ticker_short"))
         return
 
     await _send_news(message.answer, symbol, cache)
@@ -156,9 +150,11 @@ def news_kb(symbol: str) -> InlineKeyboardMarkup:
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="↩️ К акции", callback_data=f"stock:{symbol}"
+                    text=t("stock.btn.back_stock"), callback_data=f"stock:{symbol}"
                 ),
-                InlineKeyboardButton(text="↩️ Меню", callback_data="submenu:stock"),
+                InlineKeyboardButton(
+                    text=t("stock.btn.back_menu"), callback_data="submenu:stock"
+                ),
             ]
         ]
     )
@@ -176,10 +172,10 @@ async def _send_news(
             settings.cache_ttl_fundamental_seconds,
         )
     except ApiRateLimitError:
-        await send("⚠️ Превышен лимит запросов к API новостей. Попробуй через минуту.")
+        await send(t("stock.news_rate_limit"))
         return
     except Exception:  # noqa: BLE001 — граница внешнего API, ошибка уже залогирована
-        await send("😔 Не удалось получить новости. Попробуй позже.")
+        await send(t("stock.news_failed"))
         return
     await send(format_news(symbol, news), reply_markup=news_kb(symbol))
 
@@ -200,8 +196,10 @@ def format_stock(quote: StockQuote, display: str | None = None) -> str:
     """
     label = display or quote.symbol
     sign = "+" if quote.change_percent >= 0 else ""
-    return (
-        f"📈 <b>{label}</b>\n"
-        f"Цена: <b>${quote.price:,.2f}</b>\n"
-        f"Изменение: {sign}{quote.change_percent:.2f}%"
+    return t(
+        "stock.format",
+        label=label,
+        price=f"{quote.price:,.2f}",
+        sign=sign,
+        change=f"{quote.change_percent:.2f}",
     )
