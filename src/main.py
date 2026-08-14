@@ -120,8 +120,9 @@ async def main() -> None:
         ThrottlingMiddleware(settings.rate_limit_per_minute)
     )
     stats = BotStats()
-    dp.message.outer_middleware(UsersMiddleware(stats))
-    dp.callback_query.outer_middleware(UsersMiddleware(stats))
+    users_middleware = UsersMiddleware(stats)
+    dp.message.outer_middleware(users_middleware)
+    dp.callback_query.outer_middleware(users_middleware)
     dp.message.outer_middleware(QueryLogMiddleware())
     dp.callback_query.outer_middleware(QueryLogMiddleware())
 

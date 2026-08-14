@@ -89,6 +89,7 @@ class UsersMiddleware(BaseMiddleware):
         data["role"] = role
         data["is_admin"] = is_admin
         data["lang"] = self._langs.get(user_id, get_settings().default_language)
+        data["lang_set"] = user_id in self._langs
         set_lang(data["lang"])
         if await self._is_banned(user_id):
             log.info("Rejected request from banned user id=%s", user_id)
@@ -103,6 +104,8 @@ class UsersMiddleware(BaseMiddleware):
         super_admin = bool(settings.admin_id) and user_id == settings.admin_id
         if user_id in self._known:
             role = self._roles.get(user_id, "user")
+            if user_id not in self._langs:
+                await self._load_lang(user_id)
             return role, super_admin or role == "admin"
         first_name = (
             event.from_user.first_name
@@ -122,7 +125,7 @@ class UsersMiddleware(BaseMiddleware):
                         telegram_id=user_id,
                         first_name=first_name,
                         username=username,
-                        language=get_settings().default_language,
+                        language=None,
                     )
                 )
                 role = "user"
@@ -136,6 +139,13 @@ class UsersMiddleware(BaseMiddleware):
         self._known.add(user_id)
         self._roles[user_id] = role
         return role, super_admin or role == "admin"
+
+    async def _load_lang(self, user_id: int) -> None:
+        """Loads the user's language from the DB into the cache (once)."""
+        async for session in get_session():
+            user = await session.get(User, user_id)
+            if user is not None and user.language:
+                self._langs[user_id] = user.language
 
     async def _is_banned(self, user_id: int) -> bool:
         """Checks the ban with a short in-memory cache."""
