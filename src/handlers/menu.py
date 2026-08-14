@@ -196,6 +196,12 @@ def refresh_kb(cache_key: str) -> InlineKeyboardMarkup:
                 text=t("menu.btn.chart"), callback_data=f"chart:{symbol}"
             )
         )
+    elif kind == "fx":
+        row1.append(
+            InlineKeyboardButton(
+                text=t("menu.btn.pairs"), callback_data=f"fxpair:{symbol}"
+            )
+        )
     builder.row(*row1)
     builder.row(
         InlineKeyboardButton(

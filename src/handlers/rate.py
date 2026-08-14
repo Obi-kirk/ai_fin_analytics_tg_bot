@@ -427,8 +427,8 @@ async def cmd_convert(message: Message, state: FSMContext, cache: TTLCache) -> N
 
 @router.message(Command("rate"))
 async def cmd_rate(message: Message, cache: TTLCache) -> None:
-    """Shows a currency rate: /rate USD; without arguments — all CBR currencies."""
-    args = message.text.split(maxsplit=1)
+    """Shows a currency rate: /rate USD; /rate USD EUR — a cross pair."""
+    args = message.text.split(maxsplit=2)
     if len(args) < 2:
         await _send_all_rates(message, cache)
         return
@@ -443,6 +443,23 @@ async def cmd_rate(message: Message, cache: TTLCache) -> None:
         )
         return
 
+    if len(args) >= 3:
+        to_code = args[2].strip().upper()
+        if to_code not in CBR_CURRENCIES:
+            await message.answer(
+                t(
+                    "fx.not_supported",
+                    code=to_code,
+                    currencies=", ".join(sorted(CBR_CURRENCIES)),
+                )
+            )
+            return
+        if to_code == code:
+            await message.answer(t("fx.pair_same"))
+            return
+        await _send_fx_pair(message, code, to_code, cache)
+        return
+
     settings = get_settings()
     key = f"fx:{code}"
     try:
@@ -453,6 +470,71 @@ async def cmd_rate(message: Message, cache: TTLCache) -> None:
         await message.answer(t("fx.fetch_failed"))
         return
     await message.answer(format_fx(quote))
+
+
+async def _send_fx_pair(
+    message: Message, code: str, to_code: str, cache: TTLCache
+) -> None:
+    """Fetches both rates and sends the cross-rate text with pair buttons."""
+    try:
+        from_rate = await _get_fx(code, cache)
+        to_rate = await _get_fx(to_code, cache)
+    except Exception:  # noqa: BLE001 — external API boundary, error already logged
+        await message.answer(t("fx.fetch_failed"))
+        return
+    await message.answer(
+        format_fx_pair(code, to_code, from_rate.value, to_rate.value),
+        reply_markup=fx_pair_result_kb(code, to_code),
+    )
+
+
+@router.callback_query(F.data.regexp(r"^fxpair:[A-Z]{3}$"))
+async def on_fxpair(callback: CallbackQuery) -> None:
+    """Shows the second-currency chooser for a pair (the «💱 Пары» button)."""
+    code = callback.data.split(":", 1)[1]
+    if code not in CONVERT_CURRENCIES:
+        await callback.answer(t("convert.unsupported"))
+        return
+    await callback.message.edit_text(
+        t("fx.pair_choose", code=code), reply_markup=fx_pair_kb(code)
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.regexp(r"^fxpair:[A-Z]{3}:[A-Z]{3}$"))
+async def on_fxpair_show(callback: CallbackQuery, cache: TTLCache) -> None:
+    """Shows the cross-rate for the chosen pair."""
+    _, from_code, to_code = callback.data.split(":")
+    try:
+        from_rate = await _get_fx(from_code, cache)
+        to_rate = await _get_fx(to_code, cache)
+    except Exception:  # noqa: BLE001 — external API boundary, error already logged
+        await callback.message.edit_text(t("fx.fetch_failed"))
+        await callback.answer()
+        return
+    await callback.message.edit_text(
+        format_fx_pair(from_code, to_code, from_rate.value, to_rate.value),
+        reply_markup=fx_pair_result_kb(from_code, to_code),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.regexp(r"^fxpair_swap:[A-Z]{3}:[A-Z]{3}$"))
+async def on_fxpair_swap(callback: CallbackQuery, cache: TTLCache) -> None:
+    """Swaps the pair and shows the rate again."""
+    _, from_code, to_code = callback.data.split(":")
+    try:
+        from_rate = await _get_fx(to_code, cache)
+        to_rate = await _get_fx(from_code, cache)
+    except Exception:  # noqa: BLE001 — external API boundary, error already logged
+        await callback.message.edit_text(t("fx.fetch_failed"))
+        await callback.answer()
+        return
+    await callback.message.edit_text(
+        format_fx_pair(to_code, from_code, from_rate.value, to_rate.value),
+        reply_markup=fx_pair_result_kb(to_code, from_code),
+    )
+    await callback.answer()
 
 
 def _fx_short_line(quote: FxQuote) -> str:
@@ -487,10 +569,80 @@ async def _send_all_rates(message: Message, cache: TTLCache) -> None:
 
 
 def format_fx(quote: FxQuote) -> str:
-    """Formats a currency rate per unit for Telegram (HTML)."""
+    """Formats a currency rate per 1 unit for Telegram (HTML)."""
     return t(
         "fx.format",
         name=quote.name,
         code=quote.code,
         rate=_format_rate(quote.value),
+    )
+
+
+def format_fx_pair(
+    from_code: str, to_code: str, from_value: float, to_value: float
+) -> str:
+    """Formats a cross-rate for Telegram (HTML): 1 USD = 0.92 EUR."""
+    if to_value <= 0:
+        raise ValueError("Target currency rate cannot be zero")
+    rate = from_value / to_value
+    reverse = to_value / from_value if from_value else 0.0
+    lines = [t("fx.pair_title", from_code=from_code, to_code=to_code)]
+    lines.append(
+        t(
+            "fx.pair_line",
+            base=from_code,
+            quote=to_code,
+            rate=f"{rate:.4f}",
+        )
+    )
+    lines.append(
+        t(
+            "fx.pair_reverse",
+            base=to_code,
+            quote=from_code,
+            rate=f"{reverse:.4f}",
+        )
+    )
+    return "\n".join(lines)
+
+
+def fx_pair_kb(code: str, exclude: str | None = None) -> InlineKeyboardMarkup:
+    """Buttons for choosing the second currency of a pair."""
+    builder = InlineKeyboardBuilder()
+    codes = [c for c in CONVERT_CURRENCIES if c not in (code, exclude)]
+    for i in range(0, len(codes), 4):
+        builder.row(
+            *[
+                InlineKeyboardButton(text=n, callback_data=f"fxpair:{n}")
+                for n in codes[i : i + 4]
+            ]
+        )
+    builder.row(
+        InlineKeyboardButton(
+            text=t("fx.pair_back", code=code), callback_data=f"fx:{code}"
+        )
+    )
+    return builder.as_markup()
+
+
+def fx_pair_result_kb(from_code: str, to_code: str) -> InlineKeyboardMarkup:
+    """Buttons under a pair rate: swap, another pair, back."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=t("menu.btn.swap"),
+                    callback_data=f"fxpair_swap:{from_code}:{to_code}",
+                ),
+                InlineKeyboardButton(
+                    text=t("menu.btn.pairs"), callback_data=f"fxpair:{from_code}"
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text=t("fx.pair_back", code=from_code),
+                    callback_data=f"fx:{from_code}",
+                ),
+            ],
+        ]
     )

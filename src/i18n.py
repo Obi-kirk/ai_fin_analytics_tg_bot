@@ -111,6 +111,17 @@ _STRINGS: dict[str, dict[str, str]] = {
         "fx.all_title": "💱 <b>Курсы ЦБ РФ</b>",
         "fx.all_failed": "😔 Не удалось получить курсы. Попробуй позже.",
         "fx.more": "\nПодробнее: /rate USD",
+        "fx.pair_title": "💱 <b>{from_code} → {to_code}</b>",
+        "fx.pair_line": "1 {base} = <b>{rate} {quote}</b>",
+        "fx.pair_reverse": "1 {base} = <b>{rate} {quote}</b>",
+        "fx.pair_choose": "💱 Выбери валюту для пары с <b>{code}</b>:",
+        "fx.pair_back": "↩️ К курсу {code}",
+        "menu.btn.pairs": "💱 Пары",
+        "menu.btn.swap": "🔁 Поменять",
+        "fx.pair_usage": (
+            "Укажи две валюты, например: /rate USD EUR или /rate EUR JPY"
+        ),
+        "fx.pair_same": "Укажи две разные валюты.",
         "convert.start": "💱 <b>Конвертация</b>\n\nИз какого актива переводим?",
         "convert.start_hint": (
             "💱 <b>Конвертация</b>\n\nИз какого актива переводим?\n"
@@ -593,6 +604,17 @@ _STRINGS: dict[str, dict[str, str]] = {
         "fx.all_title": "💱 <b>CBR exchange rates</b>",
         "fx.all_failed": "😔 Could not fetch rates. Try again later.",
         "fx.more": "\nMore: /rate USD",
+        "fx.pair_title": "💱 <b>{from_code} → {to_code}</b>",
+        "fx.pair_line": "1 {base} = <b>{rate} {quote}</b>",
+        "fx.pair_reverse": "1 {base} = <b>{rate} {quote}</b>",
+        "fx.pair_choose": "💱 Выбери валюту для пары с <b>{code}</b>:",
+        "fx.pair_back": "↩️ К курсу {code}",
+        "menu.btn.pairs": "💱 Пары",
+        "menu.btn.swap": "🔁 Поменять",
+        "fx.pair_usage": (
+            "Укажи две валюты, например: /rate USD EUR или /rate EUR JPY"
+        ),
+        "fx.pair_same": "Укажи две разные валюты.",
         "convert.start": "💱 <b>Convert</b>\n\nConvert from which asset?",
         "convert.start_hint": (
             "💱 <b>Convert</b>\n\nConvert from which asset?\n"

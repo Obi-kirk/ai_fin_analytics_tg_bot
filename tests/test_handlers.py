@@ -17,6 +17,9 @@ from src.handlers.rate import (
     convert_kb,
     format_convert,
     format_fx,
+    format_fx_pair,
+    fx_pair_kb,
+    fx_pair_result_kb,
     parse_convert_args,
 )
 from src.handlers.stock import (
@@ -85,6 +88,42 @@ def test_format_fx_with_nominal() -> None:
     )
     assert "0.5234 ₽" in text
     assert "за 100" not in text
+
+
+def test_format_fx_pair_cross_rate() -> None:
+    text = format_fx_pair("USD", "EUR", 88.5, 92.0)
+    assert "USD → EUR" in text
+    assert "1 USD = <b>0.9620 EUR</b>" in text
+    assert "1 EUR = <b>1.0395 USD</b>" in text
+
+
+def test_format_fx_pair_reverse_side() -> None:
+    text = format_fx_pair("EUR", "USD", 92.0, 88.5)
+    assert "1 EUR = <b>1.0395 USD</b>" in text
+    assert "1 USD = <b>0.9620 EUR</b>" in text
+
+
+def test_format_fx_pair_zero_raises() -> None:
+    import pytest
+
+    with pytest.raises(ValueError):
+        format_fx_pair("USD", "EUR", 88.5, 0.0)
+
+
+def test_fx_pair_kb_has_currencies_and_back() -> None:
+    kb = fx_pair_kb("USD", exclude="EUR")
+    flat = [b.text for row in kb.inline_keyboard for b in row]
+    assert "JPY" in flat
+    assert "EUR" not in flat
+    assert "RUB" in flat
+
+
+def test_fx_pair_result_kb_buttons() -> None:
+    kb = fx_pair_result_kb("USD", "EUR")
+    flat = [b.callback_data for row in kb.inline_keyboard for b in row]
+    assert "fxpair_swap:USD:EUR" in flat
+    assert "fxpair:USD" in flat
+    assert "fx:USD" in flat
 
 
 class TestConvert:
