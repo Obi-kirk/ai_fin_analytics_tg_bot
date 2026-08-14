@@ -173,3 +173,79 @@ class TestUsersMiddleware:
 
         await mw(handler, _message(444), {})
         assert called is True
+
+
+class TestUsersMiddlewareLanguage:
+    async def _run(self, mw, event, data=None):
+        async def handler(event, data):
+            return data
+
+        return await mw(handler, event, data or {})
+
+    async def test_default_language_when_not_set(self, sqlite_db) -> None:
+        mw = UsersMiddleware(BotStats())
+        data = await self._run(mw, _message(901))
+        assert data["lang"] == "en"
+        assert data["lang_set"] is False
+
+    async def test_language_loaded_from_db(self, sqlite_db) -> None:
+        async for session in db_module.get_session():
+            session.add(UserModel(telegram_id=902, language="ru"))
+            await session.commit()
+        mw = UsersMiddleware(BotStats())
+        data = await self._run(mw, _message(902))
+        assert data["lang"] == "ru"
+        assert data["lang_set"] is True
+
+    async def test_language_change_applies_after_invalidate(self, sqlite_db) -> None:
+        async for session in db_module.get_session():
+            session.add(UserModel(telegram_id=903, language="en"))
+            await session.commit()
+        mw = UsersMiddleware(BotStats())
+
+        data1 = await self._run(mw, _message(903))
+        assert data1["lang"] == "en"
+
+        # user switches to Russian: update DB and invalidate the cache
+        async for session in db_module.get_session():
+            from sqlalchemy import update
+
+            await session.execute(
+                update(UserModel)
+                .where(UserModel.telegram_id == 903)
+                .values(language="ru")
+            )
+            await session.commit()
+        mw.invalidate(903)
+
+        data2 = await self._run(mw, _message(903))
+        assert data2["lang"] == "ru"
+        assert data2["lang_set"] is True
+
+    async def test_same_middleware_instance_shares_cache(self, sqlite_db) -> None:
+        """Regression: /lang callback and next message must see the same language."""
+        mw = UsersMiddleware(BotStats())
+        data_msg = await self._run(mw, _message(904))
+        assert data_msg["lang"] == "en"
+
+        # callback sets language to ru (like on_lang_choose) and invalidates
+        from src.i18n import set_lang
+
+        set_lang("ru")
+        async for session in db_module.get_session():
+            from sqlalchemy import update
+
+            await session.execute(
+                update(UserModel)
+                .where(UserModel.telegram_id == 904)
+                .values(language="ru")
+            )
+            await session.commit()
+        mw.invalidate(904)
+
+        data_cb = await self._run(mw, _callback(904, "lang:ru"))
+        assert data_cb["lang"] == "ru"
+
+        # next message must also be in Russian
+        data_msg2 = await self._run(mw, _message(904, "/help"))
+        assert data_msg2["lang"] == "ru"
