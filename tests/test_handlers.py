@@ -112,10 +112,16 @@ def test_format_fx_pair_zero_raises() -> None:
 
 def test_fx_pair_kb_has_currencies_and_back() -> None:
     kb = fx_pair_kb("USD", exclude="EUR")
-    flat = [b.text for row in kb.inline_keyboard for b in row]
-    assert "JPY" in flat
-    assert "EUR" not in flat
-    assert "RUB" in flat
+    flat = [b for row in kb.inline_keyboard for b in row]
+    texts = [b.text for b in flat]
+    data = [b.callback_data for b in flat]
+    assert "JPY" in texts
+    assert "EUR" not in texts
+    assert "RUB" in texts
+    # each currency button carries the full pair so the rate can be shown
+    assert "fxpair:USD:JPY" in data
+    assert "fxpair:USD:RUB" in data
+    assert "fx:USD" in data
 
 
 def test_fx_pair_result_kb_buttons() -> None:

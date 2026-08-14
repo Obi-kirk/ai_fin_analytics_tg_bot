@@ -607,13 +607,17 @@ def format_fx_pair(
 
 
 def fx_pair_kb(code: str, exclude: str | None = None) -> InlineKeyboardMarkup:
-    """Buttons for choosing the second currency of a pair."""
+    """Buttons for choosing the second currency of a pair.
+
+    Each button carries the full pair (``fxpair:FROM:TO``), so the
+    handler can show the cross-rate right away.
+    """
     builder = InlineKeyboardBuilder()
     codes = [c for c in CONVERT_CURRENCIES if c not in (code, exclude)]
     for i in range(0, len(codes), 4):
         builder.row(
             *[
-                InlineKeyboardButton(text=n, callback_data=f"fxpair:{n}")
+                InlineKeyboardButton(text=n, callback_data=f"fxpair:{code}:{n}")
                 for n in codes[i : i + 4]
             ]
         )
