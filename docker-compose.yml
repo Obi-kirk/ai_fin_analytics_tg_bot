@@ -1,0 +1,32 @@
+# FinMind: bot + PostgreSQL. Usage: docker compose up -d
+# Fill .env first (cp .env.example .env) — DATABASE_URL is overridden below.
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-finmind}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-finmind}
+      POSTGRES_DB: ${POSTGRES_DB:-finmind}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  bot:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      # Point the bot at the compose PostgreSQL, not a local one
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-finmind}:${POSTGRES_PASSWORD:-finmind}@db:5432/${POSTGRES_DB:-finmind}
+
+volumes:
+  pgdata:

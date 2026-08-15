@@ -1,0 +1,41 @@
+# Secrets — never into an image
+.env
+.env.*
+!.env.example
+
+# Git / CI
+.git
+.gitignore
+AGENTS.md
+info-ai-bot.md
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# Logs
+logs/
+
+# DB files
+*.db
+*.sqlite3
+
+# Tests / quality (not needed at runtime)
+tests/
+pytest.ini
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+
+# Docs (built into the repo, not the image)
+README.md
+Dockerfile
+docker-compose.yml
+.dockerignore

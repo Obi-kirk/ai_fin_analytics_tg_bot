@@ -57,6 +57,32 @@ python -m src.main
 
 ---
 
+## 🐳 Run with Docker
+
+The project ships a `Dockerfile` and `docker-compose.yml` (bot + PostgreSQL in one command).
+
+```bash
+# 1. Create .env from the template and fill in the secrets
+cp .env.example .env
+
+# 2. Build and start bot + PostgreSQL
+docker compose up -d
+
+# 3. Follow the logs
+docker compose logs -f bot
+
+# Stop
+docker compose down
+```
+
+Notes:
+- `DATABASE_URL` is **overridden** by compose to point at the bundled PostgreSQL container — your local Postgres (if any) is not touched. Override `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` in `.env` if needed (defaults: `finmind`).
+- Table creation is automatic on startup (`create_tables`).
+- The image runs as a non-root user; only `src/` is copied in — no tests, `.env` or logs inside the image.
+- Prefer `.env` for secrets; `docker-compose.yml` and `.dockerignore` keep them out of the image.
+
+---
+
 ## ⚙️ Configuration (`.env`)
 
 | Variable | Required | Description |
