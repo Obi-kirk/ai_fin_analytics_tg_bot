@@ -18,6 +18,12 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Create test .env (dummy values, no secrets)
+        run: |
+          cp .env.example .env
+          sed -i 's/^TELEGRAM_BOT_TOKEN=.*/TELEGRAM_BOT_TOKEN=test:token/' .env
+          sed -i 's|^DATABASE_URL=.*|DATABASE_URL=sqlite+aiosqlite:///./ci_test.db|' .env
+
       - name: Run tests
         run: pytest tests/ -q
 

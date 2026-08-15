@@ -2,6 +2,7 @@
 
 from functools import lru_cache
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -46,6 +47,14 @@ class Settings(BaseSettings):
     # AI agent
     openrouter_model: str = "nvidia/nemotron-3-nano-30b-a3b:free"
     openrouter_max_tokens: int = 1200
+
+    @field_validator("admin_id", mode="before")
+    @classmethod
+    def _empty_admin_id_is_none(cls, value: object) -> object:
+        """Turns an empty ADMIN_ID from .env into None (not an int parse error)."""
+        if value == "":
+            return None
+        return value
 
 
 @lru_cache
