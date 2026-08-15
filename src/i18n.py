@@ -486,6 +486,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         # язык
         "lang.prompt": "🌐 <b>Выбери язык / Choose language</b>",
         "lang.set": "✅ Язык: {name}",
+        "lang.menu_ready": "Главное меню обновлено. 🗂",
         "lang.name.ru": "🇷🇺 Русский",
         "lang.name.en": "🇬🇧 English",
         # троттлинг
@@ -965,6 +966,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         # language
         "lang.prompt": "🌐 <b>Выбери язык / Choose language</b>",
         "lang.set": "✅ Language: {name}",
+        "lang.menu_ready": "Main menu updated. 🗂",
         "lang.name.ru": "🇷🇺 Русский",
         "lang.name.en": "🇬🇧 English",
         # throttling

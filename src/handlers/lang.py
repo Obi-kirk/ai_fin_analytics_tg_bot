@@ -15,6 +15,7 @@ from sqlalchemy import update
 
 from src.database.db import get_session
 from src.database.models import User
+from src.handlers.menu import main_menu_kb
 from src.i18n import SUPPORTED_LANGUAGES, set_lang, t
 
 router = Router()
@@ -61,4 +62,6 @@ async def on_lang_choose(
         invalidate_role(callback.from_user.id)
     name = t("lang.name." + lang)
     await callback.message.edit_text(t("lang.set", name=name))
+    # A new message with reply_markup is required to update the reply keyboard
+    await callback.message.answer(t("lang.menu_ready"), reply_markup=main_menu_kb())
     await callback.answer()
