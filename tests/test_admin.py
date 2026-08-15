@@ -67,13 +67,13 @@ class TestParseSetrole:
 
 class TestAdminFilter:
     async def test_admin_passes(self) -> None:
-        assert await AdminFilter()(None, {"is_admin": True}) is True
+        assert await AdminFilter()(None, is_admin=True) is True
 
     async def test_regular_denied(self) -> None:
-        assert await AdminFilter()(None, {"is_admin": False}) is False
+        assert await AdminFilter()(None, is_admin=False) is False
 
     async def test_missing_denied(self) -> None:
-        assert await AdminFilter()(None, {}) is False
+        assert await AdminFilter()(None) is False
 
 
 class TestSuperAdminFilter:
@@ -83,16 +83,16 @@ class TestSuperAdminFilter:
 
     async def test_owner_passes(self, admin_settings, monkeypatch) -> None:
         monkeypatch.setattr(filters_mod, "get_settings", lambda: admin_settings)
-        assert await SuperAdminFilter()(self._Event(123456789), {}) is True
+        assert await SuperAdminFilter()(self._Event(123456789)) is True
 
     async def test_other_denied(self, admin_settings, monkeypatch) -> None:
         monkeypatch.setattr(filters_mod, "get_settings", lambda: admin_settings)
-        assert await SuperAdminFilter()(self._Event(42), {}) is False
+        assert await SuperAdminFilter()(self._Event(42)) is False
 
     async def test_no_admin_id(self, admin_settings, monkeypatch) -> None:
         admin_settings.admin_id = None
         monkeypatch.setattr(filters_mod, "get_settings", lambda: admin_settings)
-        assert await SuperAdminFilter()(self._Event(123456789), {}) is False
+        assert await SuperAdminFilter()(self._Event(123456789)) is False
 
 
 class TestUsersPageKb:
