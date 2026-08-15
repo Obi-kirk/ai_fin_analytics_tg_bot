@@ -22,7 +22,7 @@ By continuing to use the bot, you confirm that you have read this notice and acc
 
 | Section | What it does |
 |---|---|
-| 💱 **Currencies** | CBR exchange rates (12 currencies, `/rate` — all at once), converter with crypto `/convert` |
+| 💱 **Currencies** | CBR exchange rates (12 currencies, `/rate` — all at once), cross-rate pairs `/rate USD EUR`, converter with crypto `/convert` |
 | 📈 **Stocks & indexes** | Stock and index prices (SPX, DJI, VIX → ETF proxies), news `/news` |
 | 🪙 **Crypto** | Prices, trends `/trending`, top `/top`, 30-day PNG price chart `/chart` |
 | 🤖 **AI analysis** | `/analyze` — asset breakdown via LLM (quotes, profile, news, market cap, trend) |
@@ -105,7 +105,7 @@ Notes:
 ## ⌨️ Commands
 
 **User commands:**
-`/start` `/rate` `/convert` `/stock` `/crypto` `/chart` `/trending` `/top` `/news` `/analyze` `/portfolio` `/alert` `/alerts` `/digest` `/myrole` `/lang` `/help`
+`/start` `/rate` `/convert` `/stock` `/crypto` `/chart` `/trending` `/top` `/news` `/analyze` `/portfolio` `/add` `/remove` `/alert` `/alerts` `/remove_alert` `/digest` `/myrole` `/lang` `/help`
 
 **Admin commands** (only for `ADMIN_ID`):
 `/admin` `/users` `/broadcast` `/ban` `/unban` `/cachestats` `/recent` `/setrole`
@@ -113,12 +113,14 @@ Notes:
 Examples:
 ```text
 /rate              — all CBR rates
+/rate USD EUR      — cross-rate pair (any two CBR currencies)
 /convert 100 USD RUB
 /stock SPX         — S&P 500 index (via SPY ETF)
 /crypto BTC
 /chart BTC         — 30-day PNG chart
 /analyze BTC       — AI analysis
 /alert BTC 70000   — alert "above 70,000"
+/portfolio         — portfolio menu (/add BTC)
 /digest            — daily digest
 ```
 
@@ -167,7 +169,7 @@ Key decisions:
 ## 🧪 Tests
 
 ```bash
-pytest tests/ -v            # 232 tests (no network)
+pytest tests/ -v            # 241 tests (no network)
 black src/ tests/           # formatting
 isort --profile black src/ tests/
 ruff check src/ tests/      # lint

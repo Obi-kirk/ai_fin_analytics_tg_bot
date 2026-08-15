@@ -21,11 +21,9 @@ class Settings(BaseSettings):
     database_url: str = "sqlite+aiosqlite:///./ai_parser.db"
 
     # External APIs
-    fcs_api_key: str | None = None
     finnhub_api_key: str | None = None
     coingecko_api_key: str | None = None
     openrouter_api_key: str | None = None
-    groq_api_key: str | None = None
 
     # Admin (Telegram user_id) for critical notifications
     admin_id: int | None = None

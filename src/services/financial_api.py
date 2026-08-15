@@ -1,4 +1,4 @@
-"""Clients for financial APIs: CBR (currencies), FCS API (stocks/crypto), CoinGecko (crypto).
+"""Clients for financial APIs: CBR (currencies), Finnhub (stocks), CoinGecko (crypto).
 
 All outgoing requests are checked against the domain white-list (AGENTS.md, item 6).
 Clients never log or store API keys.
@@ -17,7 +17,6 @@ log = logging.getLogger(__name__)
 # White-list of domains for outgoing requests (AGENTS.md, item 6)
 ALLOWED_API_DOMAINS = (
     "www.cbr.ru",
-    "api-v4.fcsapi.com",
     "api.coingecko.com",
     "finnhub.io",
     "openrouter.ai",  # and api.openrouter.ai
@@ -78,7 +77,7 @@ class FxQuote:
 
 @dataclass
 class StockQuote:
-    """Stock/crypto quote from FCS API."""
+    """Stock/crypto quote."""
 
     symbol: str
     price: float
@@ -112,57 +111,6 @@ class CBRClient:
                 nominal=nominal,
             )
         raise LookupError(f"Currency {iso} not found in the CBR response")
-
-
-class FCSClient:
-    """FCS API: stocks and crypto. Requires a key (free plan: 500 req/month)."""
-
-    BASE_URL = "https://api-v4.fcsapi.com"
-
-    def __init__(self, api_key: str | None) -> None:
-        self._api_key = api_key
-
-    async def get_stock_quote(
-        self, symbol: str, session: aiohttp.ClientSession
-    ) -> StockQuote:
-        """Current stock quote, symbol like 'NASDAQ:AAPL'."""
-        return await self._quote("stock", symbol, session)
-
-    async def get_crypto_quote(
-        self, symbol: str, session: aiohttp.ClientSession
-    ) -> StockQuote:
-        """Current crypto price, symbol like 'BTCUSD' (type coin)."""
-        return await self._quote("crypto", symbol, session)
-
-    async def _quote(
-        self, market: str, symbol: str, session: aiohttp.ClientSession
-    ) -> StockQuote:
-        if not self._api_key:
-            raise RuntimeError(
-                f"FCS API key is not configured (FCS_API_KEY variable) — cannot request {symbol}"
-            )
-        url = f"{self.BASE_URL}/{market}/latest"
-        params = {"symbol": symbol, "access_key": self._api_key}
-        if market == "crypto":
-            params["type"] = "coin"
-        _check_domain(url)
-        async with session.get(url, params=params, headers=BASE_HEADERS) as resp:
-            resp.raise_for_status()
-            payload: dict[str, Any] = await resp.json()
-        if not payload.get("status", False):
-            raise RuntimeError(f"FCS API: {payload.get('msg', 'unknown error')}")
-        response = payload.get("response") or []
-        if not response or "active" not in response[0]:
-            raise LookupError(f"FCS API returned no data for {symbol}")
-        quote: dict[str, Any] = response[0]["active"]
-        try:
-            return StockQuote(
-                symbol=symbol,
-                price=float(quote["c"]),
-                change_percent=float(quote.get("chp") or 0),
-            )
-        except (KeyError, TypeError, ValueError) as exc:
-            raise LookupError(f"Malformed FCS API response for {symbol}") from exc
 
 
 class FinnhubClient:
