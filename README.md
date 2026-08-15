@@ -1,5 +1,7 @@
 # 🤖 FinMind — AI Financial Telegram Bot
 
+[![CI](https://github.com/Obi-kirk/ai_fin_analytics_tg_bot/actions/workflows/ci.yml/badge.svg)](https://github.com/Obi-kirk/ai_fin_analytics_tg_bot/actions/workflows/ci.yml)
+
 **FinMind** is a Telegram bot for financial analytics: CBR exchange rates, stocks and indexes (Finnhub), cryptocurrencies (CoinGecko), AI-powered asset analysis, portfolio tracking, price alerts, and a daily digest.
 
 > ⚠️ **This is a demo / educational project.** It is not a financial service and does not provide investment advice. See the [Disclaimer](#-disclaimer) for details.
@@ -174,6 +176,12 @@ black src/ tests/           # formatting
 isort --profile black src/ tests/
 ruff check src/ tests/      # lint
 ```
+
+---
+
+## 🤖 CI (GitHub Actions)
+
+Every push runs the full check suite automatically: tests (`pytest`), lint (`ruff`), formatting (`black`) and import order (`isort`). The workflow lives in `.github/workflows/ci.yml`; the badge above shows the latest result.
 
 ---
 
