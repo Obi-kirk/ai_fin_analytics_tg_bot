@@ -245,6 +245,51 @@ def test_format_stock_display() -> None:
     assert "VIXY" not in text
 
 
+def test_format_ru_stock_in_rubles() -> None:
+    text = format_stock(
+        StockQuote(symbol="SBER", price=273.4, change_percent=-4.11),
+    )
+    assert "<b>SBER</b>" in text
+    assert "273.40 ₽" in text
+    assert "-4.11" in text
+    assert "$" not in text
+
+
+def test_is_ru_stock() -> None:
+    from src.handlers.stock import RU_STOCKS, is_ru_stock
+
+    assert is_ru_stock("SBER") is True
+    assert is_ru_stock("gazp") is True  # case-insensitive
+    assert is_ru_stock("AAPL") is False
+    assert len(RU_STOCKS) == 30
+
+
+def test_stock_page_kb_pagination() -> None:
+    from src.handlers.menu import stock_page_kb
+
+    kb = stock_page_kb("ru", 0)
+    flat = [(b.text, b.callback_data) for row in kb.inline_keyboard for b in row]
+    texts = [text for text, _ in flat]
+    data = [cb for _, cb in flat]
+    assert "SBER" in texts
+    assert "1/3" in texts  # 30 tickers, 10 per page
+    assert any(d.startswith("stock_page:ru:1") for d in data)
+    assert "stock_market:ru" in data
+    assert "stock_market:world" in data
+
+    last_page = stock_page_kb("ru", 2)
+    last_flat = [b.text for row in last_page.inline_keyboard for b in row]
+    assert "SFIN" in last_flat  # last of the 30
+    assert "3/3" in last_flat
+
+
+def test_stock_market_titles() -> None:
+    from src.handlers.menu import stock_market_title
+
+    assert "РФ" in stock_market_title("ru")
+    assert "Мир" in stock_market_title("world")
+
+
 def test_format_crypto() -> None:
     text = format_crypto(
         "BTC", StockQuote(symbol="bitcoin", price=63942.0, change_percent=-1.84)

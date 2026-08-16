@@ -94,6 +94,80 @@ STOCKS_TOP10 = (
 )
 INDEXES = ("SPX", "DJI", "VIX")
 CRYPTO_TOP10 = ("BTC", "ETH", "SOL", "XRP", "DOGE", "ADA", "LTC", "BNB", "AVAX", "DOT")
+
+# Stock markets: "world" (Finnhub, USD) and "ru" (MOEX, RUB)
+STOCK_MARKETS = ("world", "ru")
+STOCKS_PER_PAGE = 10
+
+
+def stock_market_title(market: str) -> str:
+    """Market name in the current language: «🌍 Мир» / «🇷🇺 РФ»."""
+    return t(f"stock.market.{market}")
+
+
+def stock_page_kb(market: str, page: int) -> InlineKeyboardMarkup:
+    """Stock submenu for a market: ticker buttons + market switch + pagination.
+
+    World market: STOCKS_TOP10 split into pages + an index row.
+    RU market: RU_STOCKS (30 tickers) split into pages.
+    """
+    from src.handlers.stock import RU_STOCKS
+
+    symbols = list(STOCKS_TOP10) if market == "world" else list(RU_STOCKS)
+    pages = (len(symbols) + STOCKS_PER_PAGE - 1) // STOCKS_PER_PAGE
+    page = max(0, min(page, pages - 1))
+    builder = InlineKeyboardBuilder()
+
+    chunk = symbols[page * STOCKS_PER_PAGE : (page + 1) * STOCKS_PER_PAGE]
+    for i in range(0, len(chunk), 2):
+        builder.row(
+            *[
+                InlineKeyboardButton(text=n, callback_data=f"stock:{n}")
+                for n in chunk[i : i + 2]
+            ]
+        )
+    if market == "world" and page == 0:
+        builder.row(
+            *[InlineKeyboardButton(text=n, callback_data=f"stock:{n}") for n in INDEXES]
+        )
+    if pages > 1:
+        row = []
+        if page > 0:
+            row.append(
+                InlineKeyboardButton(
+                    text="◀️", callback_data=f"stock_page:{market}:{page - 1}"
+                )
+            )
+        row.append(
+            InlineKeyboardButton(
+                text=t("stock.page", page=page + 1, total=pages),
+                callback_data=f"stock_page:{market}:{page}",
+            )
+        )
+        if page < pages - 1:
+            row.append(
+                InlineKeyboardButton(
+                    text="▶️", callback_data=f"stock_page:{market}:{page + 1}"
+                )
+            )
+        builder.row(*row)
+    builder.row(
+        *[
+            InlineKeyboardButton(
+                text=stock_market_title(m),
+                callback_data=f"stock_market:{m}",
+            )
+            for m in STOCK_MARKETS
+        ]
+    )
+    return builder.as_markup()
+
+
+def stock_menu_text(market: str) -> str:
+    """Submenu title for the stock market."""
+    return t("menu.title.stock") + " · " + stock_market_title(market)
+
+
 ANALYSE_GROUPS = {
     "stock": (
         "AAPL",
@@ -140,16 +214,7 @@ def submenu_kb(kind: str) -> InlineKeyboardMarkup:
                 ]
             )
     elif kind == "stock":
-        for i in range(0, len(STOCKS_TOP10), 2):
-            builder.row(
-                *[
-                    InlineKeyboardButton(text=n, callback_data=f"stock:{n}")
-                    for n in STOCKS_TOP10[i : i + 2]
-                ]
-            )
-        builder.row(
-            *[InlineKeyboardButton(text=n, callback_data=f"stock:{n}") for n in INDEXES]
-        )
+        return stock_page_kb("world", 0)
     elif kind == "crypto":
         for i in range(0, len(CRYPTO_TOP10), 2):
             builder.row(
@@ -245,6 +310,11 @@ async def on_menu_button(message: Message, cache: TTLCache) -> None:
     if kind == "portfolio":
         await open_portfolio(message, cache)
         return
+    if kind == "stock":
+        await message.answer(
+            stock_menu_text("world"), reply_markup=stock_page_kb("world", 0)
+        )
+        return
     await message.answer(menu_title(kind), reply_markup=submenu_kb(kind))
 
 
@@ -304,7 +374,29 @@ async def on_stock(callback: CallbackQuery, cache: TTLCache) -> None:
         settings.cache_ttl_stock_seconds,
         lambda: fetch_stock(symbol),
         lambda q: format_stock(q, display=raw),
+        render_arg=None,
     )
+
+
+@router.callback_query(F.data.regexp(r"^stock_market:(world|ru)$"))
+async def on_stock_market(callback: CallbackQuery) -> None:
+    """Switches the stock submenu between world and Russian markets."""
+    market = callback.data.split(":", 1)[1]
+    await callback.message.edit_text(
+        stock_menu_text(market), reply_markup=stock_page_kb(market, 0)
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.regexp(r"^stock_page:(world|ru):\d+$"))
+async def on_stock_page(callback: CallbackQuery) -> None:
+    """Turns the stock submenu page (◀️ / ▶️)."""
+    _, market, raw_page = callback.data.split(":")
+    page = int(raw_page)
+    await callback.message.edit_text(
+        stock_menu_text(market), reply_markup=stock_page_kb(market, page)
+    )
+    await callback.answer()
 
 
 @router.callback_query(F.data.regexp(r"^crypto:[A-Z]+$"))
@@ -327,7 +419,11 @@ async def on_crypto(callback: CallbackQuery, cache: TTLCache) -> None:
 async def on_submenu(callback: CallbackQuery) -> None:
     """Returns the message to the selection submenu (the "Back" button)."""
     kind = callback.data.split(":", 1)[1]
-    await callback.message.edit_text(menu_title(kind), reply_markup=submenu_kb(kind))
+    if kind == "stock":
+        text, kb = stock_menu_text("world"), stock_page_kb("world", 0)
+    else:
+        text, kb = menu_title(kind), submenu_kb(kind)
+    await callback.message.edit_text(text, reply_markup=kb)
     await callback.answer()
 
 

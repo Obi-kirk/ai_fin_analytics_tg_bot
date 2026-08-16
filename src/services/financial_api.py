@@ -17,6 +17,7 @@ log = logging.getLogger(__name__)
 # White-list of domains for outgoing requests (AGENTS.md, item 6)
 ALLOWED_API_DOMAINS = (
     "www.cbr.ru",
+    "iss.moex.com",  # MOEX ISS — Russian stocks (free, no key)
     "api.coingecko.com",
     "finnhub.io",
     "openrouter.ai",  # and api.openrouter.ai
@@ -111,6 +112,44 @@ class CBRClient:
                 nominal=nominal,
             )
         raise LookupError(f"Currency {iso} not found in the CBR response")
+
+
+class MoexClient:
+    """Russian stock quotes via the official MOEX ISS API (free, no key).
+
+    Endpoint: https://iss.moex.com/iss/engines/stock/markets/shares/boards/TQBR
+    Returns prices in RUB and the daily change in percent (CHANGE).
+    """
+
+    BASE_URL = "https://iss.moex.com/iss/engines/stock/markets/shares/boards/TQBR/securities.json"
+
+    @staticmethod
+    async def get_quote(symbol: str, session: aiohttp.ClientSession) -> StockQuote:
+        """Current quote of a Russian stock by ticker (SBER, GAZP, ...)."""
+        params = {
+            "iss.meta": "off",
+            "iss.only": "securities,marketdata",
+            "securities.columns": "SECID,SHORTNAME",
+            "marketdata.columns": "SECID,LAST,CHANGE",
+            "securities": symbol,
+        }
+        _check_domain(MoexClient.BASE_URL)
+        async with session.get(MoexClient.BASE_URL, params=params) as resp:
+            resp.raise_for_status()
+            payload: dict[str, Any] = await resp.json()
+        rows = (payload.get("marketdata") or {}).get("data") or []
+        if not rows:
+            raise LookupError(f"MOEX does not know ticker {symbol}")
+        row = rows[0]
+        price = row[1]
+        change = row[2] if len(row) > 2 else 0.0
+        if not price:
+            raise LookupError(f"MOEX returned no price for {symbol}")
+        return StockQuote(
+            symbol=symbol,
+            price=float(price),
+            change_percent=float(change or 0),
+        )
 
 
 class FinnhubClient:

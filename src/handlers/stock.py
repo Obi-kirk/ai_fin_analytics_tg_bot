@@ -21,6 +21,7 @@ from src.services.cache import TTLCache
 from src.services.financial_api import (
     ApiRateLimitError,
     FinnhubClient,
+    MoexClient,
     StockQuote,
     make_session,
 )
@@ -42,6 +43,45 @@ INDEX_ALIASES = {
 }
 
 TICKER_RE = re.compile(r"^[A-Z0-9.\-^]{1,15}$")
+
+# Russian stocks (MOEX tickers, prices in RUB). Everything else goes to Finnhub.
+RU_STOCKS = (
+    "SBER",
+    "GAZP",
+    "LKOH",
+    "ROSN",
+    "NVTK",
+    "PLZL",
+    "TATN",
+    "MGNT",
+    "MOEX",
+    "SNGS",
+    "SBERP",
+    "VTBR",
+    "AFLT",
+    "GMKN",
+    "CHMF",
+    "NLMK",
+    "MAGN",
+    "PHOR",
+    "ALRS",
+    "IRAO",
+    "FEES",
+    "RTKM",
+    "RSTI",
+    "TRNFP",
+    "HYDR",
+    "ENPG",
+    "MTLR",
+    "PIKK",
+    "CBOM",
+    "SFIN",
+)
+
+
+def is_ru_stock(symbol: str) -> bool:
+    """True if the ticker belongs to the Russian (MOEX) market."""
+    return symbol.upper() in RU_STOCKS
 
 
 def resolve_stock_symbol(raw: str) -> str:
@@ -81,7 +121,14 @@ async def cmd_stock(message: Message, cache: TTLCache) -> None:
 
 
 async def fetch_stock(symbol: str) -> StockQuote:
-    """Fetches a Finnhub quote via a separate HTTP session."""
+    """Fetches a stock quote: MOEX for Russian tickers, Finnhub otherwise."""
+    if is_ru_stock(symbol):
+        async with make_session() as session:
+            try:
+                return await MoexClient.get_quote(symbol, session)
+            except Exception:
+                log.exception("Failed to fetch quote %s from MOEX", symbol)
+                raise
     async with make_session() as session:
         client = FinnhubClient(get_settings().finnhub_api_key)
         try:
@@ -193,9 +240,18 @@ def format_stock(quote: StockQuote, display: str | None = None) -> str:
 
     ``display`` — how to name the asset in the title (for indexes this is
     the user's original alias, e.g. SPX, while quote.symbol == SPY).
+    Russian (MOEX) stocks are shown in rubles.
     """
     label = display or quote.symbol
     sign = "+" if quote.change_percent >= 0 else ""
+    if is_ru_stock(label):
+        return t(
+            "stock.format_ru",
+            label=label,
+            price=f"{quote.price:,.2f}",
+            sign=sign,
+            change=f"{quote.change_percent:.2f}",
+        )
     return t(
         "stock.format",
         label=label,

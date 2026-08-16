@@ -164,6 +164,15 @@ _STRINGS: dict[str, dict[str, str]] = {
         "stock.format": (
             "📈 <b>{label}</b>\n" "Цена: <b>${price}</b>\n" "Изменение: {sign}{change}%"
         ),
+        "stock.format_ru": (
+            "📈 <b>{label}</b>\n"
+            "Цена: <b>{price} ₽</b>\n"
+            "Изменение: {sign}{change}%"
+        ),
+        "stock.market.ru": "🇷🇺 РФ",
+        "stock.market.world": "🌍 Мир",
+        "stock.market.choose": "📈 <b>Акции</b> — выбери рынок:",
+        "stock.page": "{page}/{total}",
         "stock.news_title": "📰 <b>Новости {symbol}</b> (за 10 дней)",
         "stock.news.read": "читать",
         "stock.news.empty": "Новостей за этот период нет.",
@@ -656,6 +665,13 @@ _STRINGS: dict[str, dict[str, str]] = {
         "stock.format": (
             "📈 <b>{label}</b>\n" "Price: <b>${price}</b>\n" "Change: {sign}{change}%"
         ),
+        "stock.format_ru": (
+            "📈 <b>{label}</b>\n" "Price: <b>{price} ₽</b>\n" "Change: {sign}{change}%"
+        ),
+        "stock.market.ru": "🇷🇺 RU",
+        "stock.market.world": "🌍 World",
+        "stock.market.choose": "📈 <b>Stocks</b> — choose a market:",
+        "stock.page": "{page}/{total}",
         "stock.news_title": "📰 <b>{symbol} news</b> (last 10 days)",
         "stock.news.read": "read",
         "stock.news.empty": "No news for this period.",
