@@ -89,9 +89,10 @@ class AddState(StatesGroup):
 
 
 class QtyState(StatesGroup):
-    """FSM for changing the asset quantity in the portfolio."""
+    """FSM for changing the asset quantity and buy price in the portfolio."""
 
     quantity = State()
+    buy_price = State()
 
 
 def _fmt_qty(q: float) -> str:
@@ -415,6 +416,9 @@ def _pf_quote_kb(asset_type: str, symbol: str) -> InlineKeyboardMarkup:
         ),
         InlineKeyboardButton(
             text=t("portfolio.btn.qty"), callback_data=f"pf:qty:{symbol}"
+        ),
+        InlineKeyboardButton(
+            text=t("portfolio.btn.price"), callback_data=f"pf:price:{symbol}"
         ),
         InlineKeyboardButton(
             text=t("portfolio.btn.remove_item"),
@@ -954,7 +958,7 @@ async def on_pf_add_cancel(
 
 @router.callback_query(F.data.regexp(r"^pf:qty:[A-Z0-9.\-]+$"))
 async def on_pf_qty(callback: CallbackQuery, state: FSMContext) -> None:
-    """Starts the FSM for changing the asset quantity."""
+    """Starts the FSM for changing the asset quantity (and buy price)."""
     symbol = callback.data.split(":", 2)[2]
     await state.set_state(QtyState.quantity)
     await state.update_data(symbol=symbol)
@@ -971,31 +975,134 @@ async def on_pf_qty(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
 
 
+@router.callback_query(F.data.regexp(r"^pf:price:[A-Z0-9.\-]+$"))
+async def on_pf_price(callback: CallbackQuery, state: FSMContext) -> None:
+    """Starts the FSM for setting only the buy price (average purchase)."""
+    symbol = callback.data.split(":", 2)[2]
+    await state.set_state(QtyState.buy_price)
+    await state.update_data(symbol=symbol, price_only=True)
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(
+            text=t("portfolio.btn.cancel"), callback_data="pf:qty_cancel"
+        )
+    )
+    await callback.message.edit_text(
+        t("portfolio.add.price_prompt", symbol=symbol),
+        reply_markup=builder.as_markup(),
+    )
+    await callback.answer()
+
+
 @router.message(QtyState.quantity)
-async def on_qty_value(message: Message, state: FSMContext, cache: TTLCache) -> None:
-    """Accepts the quantity and saves it."""
+async def on_qty_value(message: Message, state: FSMContext) -> None:
+    """Accepts the quantity and asks for the buy price (average purchase)."""
     qty = await _parse_qty((message.text or "").strip())
     if qty is None:
         await message.answer(t("portfolio.add.bad_qty"))
         return
     data = await state.get_data()
     symbol = data["symbol"]
+    await state.update_data(quantity=qty)
+    await state.set_state(QtyState.buy_price)
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(
+            text=t("portfolio.btn.skip_price"), callback_data="pf:qty_skip_price"
+        ),
+        InlineKeyboardButton(
+            text=t("portfolio.btn.cancel"), callback_data="pf:qty_cancel"
+        ),
+    )
+    await message.answer(
+        t("portfolio.add.price_prompt", symbol=symbol),
+        reply_markup=builder.as_markup(),
+    )
+
+
+@router.message(QtyState.buy_price)
+async def on_qty_price_value(
+    message: Message, state: FSMContext, cache: TTLCache
+) -> None:
+    """Accepts the buy price and saves quantity + price (or price only)."""
+    price = await _parse_price((message.text or "").strip())
+    if price is None:
+        await message.answer(t("portfolio.add.bad_price"))
+        return
+    data = await state.get_data()
+    symbol = data["symbol"]
+    asset_type = data.get("asset_type") or resolve_asset_type(symbol) or "stock"
+    if data.get("price_only"):
+        await _update_buy_price(message.from_user.id, symbol, price)
+        currency = "₽" if (asset_type == "fx" or is_ru_stock(symbol)) else "$"
+        msg = t(
+            "portfolio.price.saved",
+            symbol=symbol,
+            price=f"{price:,.2f}",
+            currency=currency,
+        )
+    else:
+        qty: float | None = data.get("quantity")
+        await _update_qty_price(message.from_user.id, symbol, qty, price)
+        msg = t("portfolio.qty.saved", symbol=symbol, qty=_fmt_qty(qty))
+    await state.clear()
+    _, kb = await _render_pf_menu(message.from_user.id, cache)
+    await message.answer(msg, reply_markup=kb)
+
+
+async def _update_buy_price(telegram_id: int, symbol: str, buy_price: float) -> None:
+    """Updates only the buy price of the asset in the DB."""
     async for session in get_session():
         await session.execute(
             update(PortfolioItem)
             .where(
-                PortfolioItem.telegram_id == message.from_user.id,
+                PortfolioItem.telegram_id == telegram_id,
                 PortfolioItem.symbol == symbol,
             )
-            .values(quantity=qty)
+            .values(buy_price=buy_price)
         )
         await session.commit()
+
+
+@router.callback_query(F.data == "pf:qty_skip_price")
+async def on_qty_skip_price(
+    callback: CallbackQuery, state: FSMContext, cache: TTLCache
+) -> None:
+    """Saves the quantity, keeps the current buy price."""
+    data = await state.get_data()
+    symbol = data.get("symbol")
+    qty: float | None = data.get("quantity")
+    if not symbol or qty is None:
+        await state.clear()
+        await callback.answer(t("portfolio.stale"), show_alert=True)
+        return
+    await _update_qty_price(callback.from_user.id, symbol, qty, None)
     await state.clear()
-    _, kb = await _render_pf_menu(message.from_user.id, cache)
-    await message.answer(
+    _, kb = await _render_pf_menu(callback.from_user.id, cache)
+    await callback.message.answer(
         t("portfolio.qty.saved", symbol=symbol, qty=_fmt_qty(qty)),
         reply_markup=kb,
     )
+    await callback.answer()
+
+
+async def _update_qty_price(
+    telegram_id: int, symbol: str, quantity: float | None, buy_price: float | None
+) -> None:
+    """Updates the asset quantity and optionally the buy price in the DB."""
+    values: dict[str, object] = {"quantity": quantity}
+    if buy_price is not None:
+        values["buy_price"] = buy_price
+    async for session in get_session():
+        await session.execute(
+            update(PortfolioItem)
+            .where(
+                PortfolioItem.telegram_id == telegram_id,
+                PortfolioItem.symbol == symbol,
+            )
+            .values(**values)
+        )
+        await session.commit()
 
 
 @router.callback_query(F.data == "pf:qty_cancel")
