@@ -49,6 +49,7 @@ from src.handlers.stock import (
     TICKER_RE,
     fetch_stock,
     format_stock,
+    is_ru_stock,
     resolve_stock_symbol,
 )
 from src.i18n import t
@@ -213,6 +214,7 @@ async def _portfolio_value(telegram_id: int, cache: TTLCache) -> str:
         usd_rate = usd.value / usd.nominal
     except Exception:  # noqa: BLE001 - RUB total unavailable without USD rate
         log.warning("Failed to fetch the USD rate for the portfolio total")
+    rub_total = 0.0
     usd_total = 0.0
     for item in items:
         try:
@@ -220,16 +222,32 @@ async def _portfolio_value(telegram_id: int, cache: TTLCache) -> str:
         except Exception:  # noqa: BLE001 — one asset must not break the total
             log.warning("Failed to fetch price %s for the portfolio total", item.symbol)
             continue
-        if item.asset_type == "fx":
+        qty = item.quantity or 0.0
+        if item.asset_type == "fx" or (
+            item.asset_type == "stock" and is_ru_stock(item.symbol)
+        ):
+            # price in RUB (CBR currencies and MOEX stocks)
+            rub = _per_unit(item.asset_type, quote) * qty
+            rub_total += rub
             if usd_rate:
-                usd_total += (quote.value / quote.nominal) / usd_rate * item.quantity
+                usd_total += rub / usd_rate
         else:
-            usd_total += quote.price * item.quantity
-    if usd_total <= 0:
+            # price in USD (world stocks and crypto)
+            usd = quote.price * qty
+            usd_total += usd
+            if usd_rate:
+                rub_total += usd * usd_rate
+    if rub_total <= 0 and usd_total <= 0:
         return ""
-    rub = usd_total * usd_rate if usd_rate else None
-    rub_part = t("portfolio.value.rub", rub=f"{rub:,.0f}") if rub else ""
-    return t("portfolio.value", usd=f"{usd_total:,.2f}", rub=rub_part)
+    if usd_rate:
+        return t(
+            "portfolio.value",
+            usd=f"{usd_total:,.2f}",
+            rub=f"{rub_total:,.0f}",
+        )
+    if rub_total > 0:
+        return t("portfolio.value.rub_only", rub=f"{rub_total:,.0f}")
+    return t("portfolio.value.usd_only", usd=f"{usd_total:,.2f}")
 
 
 async def _render_pf_menu(
@@ -290,6 +308,9 @@ def _short_line(
     if asset_type == "fx":
         rate = f"{quote.value:.2f}" if quote.value >= 1 else f"{quote.value:.4f}"
         base = f"{quote.code} — {rate} ₽"
+    elif asset_type == "stock" and is_ru_stock(symbol):
+        sign = "+" if quote.change_percent >= 0 else ""
+        base = f"{symbol} — {quote.price:,.2f} ₽ ({sign}{quote.change_percent:.2f}%)"
     else:
         sign = "+" if quote.change_percent >= 0 else ""
         base = f"{symbol} — ${quote.price:,.2f} ({sign}{quote.change_percent:.2f}%)"
@@ -322,7 +343,10 @@ def _quote_text(
     if trend:
         text += f"\n{trend}"
     if quantity is not None:
-        currency = "₽" if asset_type == "fx" else "$"
+        if asset_type == "fx" or (asset_type == "stock" and is_ru_stock(symbol)):
+            currency = "₽"
+        else:
+            currency = "$"
         value = _per_unit(asset_type, quote) * quantity
         text += t(
             "portfolio.qty_line",
@@ -1093,6 +1117,7 @@ async def cmd_alert(message: Message, command: CommandObject) -> None:
             symbol=symbol,
             arrow=arrow,
             target=f"{target:,.2f}",
+            currency="₽" if is_ru_stock(symbol) else "$",
         )
     )
 
@@ -1140,9 +1165,10 @@ def _alert_line(a: Alert) -> str:
             f"{TYPE_ICONS.get(a.asset_type, '')}"
             f"<b>{a.symbol}</b> {arrow} {a.target_price:g}%"
         )
+    currency = "₽" if is_ru_stock(a.symbol) else "$"
     return (
         f"{TYPE_ICONS.get(a.asset_type, '')}"
-        f"<b>{a.symbol}</b> {arrow} ${a.target_price:,.2f}"
+        f"<b>{a.symbol}</b> {arrow} {currency}{a.target_price:,.2f}"
     )
 
 
@@ -1272,6 +1298,13 @@ async def _cached_price_hint(asset_type: str, symbol: str, cache: TTLCache) -> s
     if asset_type == "fx":
         return t("portfolio.alert.hint_fx", price=f"{quote.value:.2f}")
     sign = "+" if quote.change_percent >= 0 else ""
+    if asset_type == "stock" and is_ru_stock(symbol):
+        return t(
+            "portfolio.alert.hint_ru",
+            price=f"{quote.price:,.2f}",
+            sign=sign,
+            pct=f"{quote.change_percent:.2f}",
+        )
     return t(
         "portfolio.alert.hint",
         price=f"{quote.price:,.2f}",
@@ -1424,7 +1457,11 @@ async def on_alert_dir(
     builder.row(
         InlineKeyboardButton(text=t("portfolio.btn.back"), callback_data="pf:menu")
     )
-    unit = "%" if mode == "percent" else f"${value:,.2f}"
+    unit = (
+        "%"
+        if mode == "percent"
+        else f"{'₽' if is_ru_stock(symbol) else '$'}{value:,.2f}"
+    )
     await callback.message.edit_text(
         t(
             "portfolio.alert.set2",

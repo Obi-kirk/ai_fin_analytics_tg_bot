@@ -17,7 +17,7 @@ from src.database.db import get_session
 from src.database.models import Alert
 from src.handlers.crypto import COINS
 from src.handlers.rate import fetch_fx
-from src.handlers.stock import fetch_stock
+from src.handlers.stock import fetch_stock, is_ru_stock
 from src.i18n import t
 from src.services.financial_api import CoinGeckoClient, make_session
 
@@ -27,6 +27,7 @@ log = logging.getLogger(__name__)
 def _alert_message(alert: Alert, price: float) -> str:
     """Notification text: for %-alerts — change from the baseline price."""
     arrow = t("alerts.above") if alert.direction == "above" else t("alerts.below")
+    currency = "₽" if is_ru_stock(alert.symbol) else "$"
     if alert.mode == "percent" and alert.baseline_price:
         change_pct = (price - alert.baseline_price) / alert.baseline_price * 100
         return t(
@@ -36,6 +37,7 @@ def _alert_message(alert: Alert, price: float) -> str:
             pct=f"{change_pct:+.2f}",
             arrow=arrow,
             target=f"{alert.target_price:,.2f}",
+            currency=currency,
         )
     return t(
         "alerts.fired_abs",
@@ -43,6 +45,7 @@ def _alert_message(alert: Alert, price: float) -> str:
         price=f"{price:,.2f}",
         arrow=arrow,
         target=f"{alert.target_price:,.2f}",
+        currency=currency,
     )
 
 

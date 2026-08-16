@@ -17,7 +17,7 @@ from src.database.db import get_session
 from src.database.models import DigestAsset, DigestSubscription, PortfolioItem
 from src.handlers.crypto import fetch_crypto
 from src.handlers.rate import fetch_fx
-from src.handlers.stock import fetch_stock, resolve_stock_symbol
+from src.handlers.stock import fetch_stock, is_ru_stock, resolve_stock_symbol
 from src.i18n import t
 from src.services.cache import TTLCache
 from src.services.financial_api import CBR_CURRENCIES
@@ -75,6 +75,9 @@ def _line(
     if asset_type == "fx":
         rate = f"{quote.value:.2f}" if quote.value >= 1 else f"{quote.value:.4f}"
         base = f"{quote.code} — {rate} ₽"
+    elif asset_type == "stock" and is_ru_stock(symbol):
+        sign = "+" if quote.change_percent >= 0 else ""
+        base = f"{symbol} — {quote.price:,.2f} ₽ ({sign}{quote.change_percent:.2f}%)"
     else:
         sign = "+" if quote.change_percent >= 0 else ""
         base = f"{symbol} — ${quote.price:,.2f} ({sign}{quote.change_percent:.2f}%)"

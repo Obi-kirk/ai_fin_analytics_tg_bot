@@ -269,8 +269,9 @@ _STRINGS: dict[str, dict[str, str]] = {
         "portfolio.choose": (
             "📁 <b>Мой портфель</b>\n\nВыбери категорию или действие."
         ),
-        "portfolio.value": "\n💰 Стоимость: <b>${usd}</b>{rub}",
-        "portfolio.value.rub": " • <b>{rub} ₽</b>",
+        "portfolio.value": "\n💰 Стоимость: <b>${usd}</b> • <b>{rub} ₽</b>",
+        "portfolio.value.usd_only": "\n💰 Стоимость: <b>${usd}</b>",
+        "portfolio.value.rub_only": "\n💰 Стоимость: <b>{rub} ₽</b>",
         "portfolio.type.fx": "Валюты",
         "portfolio.type.stock": "Акции",
         "portfolio.type.crypto": "Крипта",
@@ -345,7 +346,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         ),
         "portfolio.alert.set": (
             "🔔 Алерт установлен: <b>{symbol}</b> {arrow} "
-            "<b>${target}</b>\nПроверяется каждые 30 минут. /alerts — список"
+            "<b>{currency}{target}</b>\nПроверяется каждые 30 минут. /alerts — список"
         ),
         "portfolio.alert.empty": (
             "🔕 Активных алертов нет.\nСоздать: /alert BTC 70000"
@@ -371,6 +372,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         ),
         "portfolio.alert.hint_fx": "Текущая цена: <b>{price} ₽</b>\n",
         "portfolio.alert.hint": "Текущая цена: <b>${price}</b> ({sign}{pct}%)\n",
+        "portfolio.alert.hint_ru": "Текущая цена: <b>{price} ₽</b> ({sign}{pct}%)\n",
         "portfolio.alert.bad_number": "Это не число. Напиши число цифрами.",
         "portfolio.alert.bad_value": "Значение должно быть больше нуля.",
         "portfolio.alert.direction": (
@@ -389,14 +391,14 @@ _STRINGS: dict[str, dict[str, str]] = {
         # алерты (фон)
         "alerts.fired": (
             "🔔 <b>Алерт сработал</b>\n"
-            "{symbol}: цена <b>${price}</b> — изменилась на "
+            "{symbol}: цена <b>{price} {currency}</b> — изменилась на "
             "<b>{pct}%</b> ({arrow} порога {target}%)\n"
             "\nУправление: /alerts"
         ),
         "alerts.fired_abs": (
             "🔔 <b>Алерт сработал</b>\n"
-            "{symbol}: <b>${price}</b> — {arrow} порога "
-            "<b>${target}</b>\n\nУправление: /alerts"
+            "{symbol}: <b>{price} {currency}</b> — {arrow} порога "
+            "<b>{target} {currency}</b>\n\nУправление: /alerts"
         ),
         "alerts.above": "выше",
         "alerts.below": "ниже",
@@ -764,8 +766,9 @@ _STRINGS: dict[str, dict[str, str]] = {
             "«🪙 Crypto» / «💱 Rates» near the asset price — «➕ Add to portfolio»."
         ),
         "portfolio.choose": "📁 <b>My portfolio</b>\n\nChoose a category or action.",
-        "portfolio.value": "\n💰 Value: <b>${usd}</b>{rub}",
-        "portfolio.value.rub": " • <b>{rub} ₽</b>",
+        "portfolio.value": "\n💰 Value: <b>${usd}</b> • <b>{rub} ₽</b>",
+        "portfolio.value.usd_only": "\n💰 Value: <b>${usd}</b>",
+        "portfolio.value.rub_only": "\n💰 Value: <b>{rub} ₽</b>",
         "portfolio.type.fx": "Currencies",
         "portfolio.type.stock": "Stocks",
         "portfolio.type.crypto": "Crypto",
@@ -840,7 +843,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         ),
         "portfolio.alert.set": (
             "🔔 Alert set: <b>{symbol}</b> {arrow} "
-            "<b>${target}</b>\nChecked every 30 minutes. /alerts — list"
+            "<b>{currency}{target}</b>\nChecked every 30 minutes. /alerts — list"
         ),
         "portfolio.alert.empty": "🔕 No active alerts.\nCreate: /alert BTC 70000",
         "portfolio.alert.title": "🔔 <b>My alerts</b>",
@@ -864,6 +867,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         ),
         "portfolio.alert.hint_fx": "Current price: <b>{price} ₽</b>\n",
         "portfolio.alert.hint": "Current price: <b>${price}</b> ({sign}{pct}%)\n",
+        "portfolio.alert.hint_ru": "Current price: <b>{price} ₽</b> ({sign}{pct}%)\n",
         "portfolio.alert.bad_number": "That's not a number. Enter digits.",
         "portfolio.alert.bad_value": "Value must be greater than zero.",
         "portfolio.alert.direction": (
@@ -882,14 +886,14 @@ _STRINGS: dict[str, dict[str, str]] = {
         # alerts (background)
         "alerts.fired": (
             "🔔 <b>Alert triggered</b>\n"
-            "{symbol}: price <b>${price}</b> — changed by "
+            "{symbol}: price <b>{price} {currency}</b> — changed by "
             "<b>{pct}%</b> ({arrow} threshold {target}%)\n"
             "\nManage: /alerts"
         ),
         "alerts.fired_abs": (
             "🔔 <b>Alert triggered</b>\n"
-            "{symbol}: <b>${price}</b> — {arrow} threshold "
-            "<b>${target}</b>\n\nManage: /alerts"
+            "{symbol}: <b>{price} {currency}</b> — {arrow} threshold "
+            "<b>{target} {currency}</b>\n\nManage: /alerts"
         ),
         "alerts.above": "above",
         "alerts.below": "below",

@@ -169,6 +169,10 @@ class TestShortLine:
         quote = StockQuote(symbol="NVDA", price=140.1, change_percent=-2.5)
         assert _short_line("stock", "NVDA", quote) == "NVDA — $140.10 (-2.50%)"
 
+    def test_ru_stock_in_rubles(self) -> None:
+        quote = StockQuote(symbol="SBER", price=273.4, change_percent=-1.48)
+        assert _short_line("stock", "SBER", quote) == "SBER — 273.40 ₽ (-1.48%)"
+
     def test_with_quantity_int(self) -> None:
         quote = StockQuote(symbol="AAPL", price=100.5, change_percent=1.23)
         assert _short_line("stock", "AAPL", quote, 5.0) == "AAPL — $100.50 (+1.23%) ×5"
@@ -184,6 +188,12 @@ class TestQuoteTextQuantity:
         text = _quote_text("stock", "AAPL", quote, 5)
         assert "Количество: 5" in text
         assert "Стоимость: <b>1,511.25 $</b>" in text
+
+    def test_ru_stock_cost_in_rubles(self) -> None:
+        quote = StockQuote(symbol="SBER", price=273.4, change_percent=-1.48)
+        text = _quote_text("stock", "SBER", quote, 5)
+        assert "Количество: 5" in text
+        assert "Стоимость: <b>1,367.00 ₽</b>" in text
 
     def test_no_quantity(self) -> None:
         quote = StockQuote(symbol="AAPL", price=302.25, change_percent=0.5)
