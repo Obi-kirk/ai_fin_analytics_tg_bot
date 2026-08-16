@@ -9,6 +9,7 @@ from typing import Any
 from aiogram import F, Router
 from aiogram.filters import Command
 from aiogram.types import (
+    BufferedInputFile,
     CallbackQuery,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
@@ -24,6 +25,7 @@ from src.services.financial_api import (
     GoogleNewsClient,
     MoexClient,
     StockQuote,
+    YahooClient,
     make_session,
 )
 
@@ -354,3 +356,72 @@ def format_stock(
         sign=sign,
         change=f"{quote.change_percent:.2f}",
     )
+
+
+async def fetch_stock_history(symbol: str) -> list[float]:
+    """30-day stock price history: MOEX candles for RU, Yahoo for the world."""
+    resolved = resolve_stock_symbol(symbol)
+    async with make_session() as session:
+        if is_ru_stock(symbol):
+            try:
+                return await MoexClient.get_price_history(resolved, session)
+            except Exception:
+                log.exception("Failed to fetch history %s from MOEX", symbol)
+                raise
+        try:
+            return await YahooClient.get_price_history(resolved, session)
+        except Exception:
+            log.exception("Failed to fetch history %s from Yahoo", symbol)
+            raise
+
+
+async def _send_stock_chart(message: Message, symbol: str, cache: TTLCache) -> None:
+    """Generates and sends the 30-day stock price chart (PNG)."""
+    from src.handlers.crypto import build_chart_png
+
+    raw = symbol.upper()
+    if not TICKER_RE.match(raw):
+        await message.answer(t("stock.bad_ticker_short"))
+        return
+    settings = get_settings()
+    try:
+        history = await cache.get_or_set(
+            f"stock:chart:{raw}",
+            lambda: fetch_stock_history(raw),
+            settings.cache_ttl_fundamental_seconds,
+        )
+    except Exception:  # noqa: BLE001 — external API boundary, error already logged
+        await message.answer(t("stock.chart.failed"))
+        return
+    if len(history) < 2:
+        await message.answer(t("stock.chart.insufficient"))
+        return
+    try:
+        currency = "RUB" if is_ru_stock(raw) else "USD"
+        png = build_chart_png(raw, history, currency=currency)
+    except Exception:
+        log.exception("Failed to build the chart for %s", raw)
+        await message.answer(t("stock.chart.build_failed"))
+        return
+    await message.answer_photo(
+        BufferedInputFile(png, filename=f"{raw}.png"),
+        caption=t("stock.chart.caption", symbol=raw),
+    )
+
+
+@router.message(Command("chart"))
+async def cmd_chart(message: Message, cache: TTLCache) -> None:
+    """Shows a 30-day price chart for a stock or index: /chart SBER."""
+    args = message.text.split(maxsplit=1)
+    if len(args) < 2:
+        await message.answer(t("stock.chart.usage"))
+        return
+    await _send_stock_chart(message, args[1].strip().upper(), cache)
+
+
+@router.callback_query(F.data.regexp(r"^stock_chart:[A-Z0-9.\-^]+$"))
+async def on_stock_chart_cb(callback: CallbackQuery, cache: TTLCache) -> None:
+    """Sends the stock chart from the card button."""
+    symbol = callback.data.split(":", 1)[1]
+    await callback.answer()
+    await _send_stock_chart(callback.message, symbol, cache)

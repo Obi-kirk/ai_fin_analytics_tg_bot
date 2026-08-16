@@ -19,6 +19,7 @@ ALLOWED_API_DOMAINS = (
     "www.cbr.ru",
     "iss.moex.com",  # MOEX ISS — Russian stocks (free, no key)
     "news.google.com",  # Google News RSS — Russian stock news (free, no key)
+    "query1.finance.yahoo.com",  # Yahoo chart — world stock history (free, no key)
     "api.coingecko.com",
     "finnhub.io",
     "openrouter.ai",  # and api.openrouter.ai
@@ -164,6 +165,33 @@ class MoexClient:
             name=name,
         )
 
+    @staticmethod
+    async def get_price_history(
+        symbol: str, session: aiohttp.ClientSession, days: int = 30
+    ) -> list[float]:
+        """Daily closing prices for the last N days (MOEX candles, free)."""
+        till = datetime.now(timezone.utc).date().isoformat()
+        frm = (datetime.now(timezone.utc).date() - timedelta(days=days)).isoformat()
+        url = (
+            f"https://iss.moex.com/iss/engines/stock/markets/shares/"
+            f"boards/TQBR/securities/{symbol}/candles.json"
+        )
+        params = {
+            "iss.meta": "off",
+            "from": frm,
+            "till": till,
+            "interval": "24",
+        }
+        _check_domain(url)
+        async with session.get(url, params=params) as resp:
+            resp.raise_for_status()
+            payload: dict[str, Any] = await resp.json()
+        rows = (payload.get("candles") or {}).get("data") or []
+        closes = [float(r[1]) for r in rows if r[1] is not None]
+        if not closes:
+            raise LookupError(f"MOEX returned no history for {symbol}")
+        return closes
+
 
 class GoogleNewsClient:
     """Russian stock news via Google News RSS (free, no key).
@@ -211,6 +239,38 @@ class GoogleNewsClient:
             if len(news) >= limit:
                 break
         return news
+
+
+class YahooClient:
+    """World stock price history via Yahoo Finance chart API (free, no key).
+
+    Finnhub candle history is paid, so world stocks use Yahoo instead.
+    """
+
+    BASE_URL = "https://query1.finance.yahoo.com/v8/finance/chart"
+
+    @staticmethod
+    async def get_price_history(
+        symbol: str, session: aiohttp.ClientSession, days: int = 30
+    ) -> list[float]:
+        """Daily closing prices for the last N days."""
+        params = {"interval": "1d", "range": f"{days}d"}
+        headers = dict(BASE_HEADERS)
+        headers["User-Agent"] = "Mozilla/5.0"
+        _check_domain(YahooClient.BASE_URL)
+        async with session.get(
+            f"{YahooClient.BASE_URL}/{symbol}", params=params, headers=headers
+        ) as resp:
+            resp.raise_for_status()
+            payload: dict[str, Any] = await resp.json()
+        result = (payload.get("chart") or {}).get("result") or []
+        if not result:
+            raise LookupError(f"Yahoo does not know ticker {symbol}")
+        quote = ((result[0].get("indicators") or {}).get("quote") or [{}])[0]
+        closes = [c for c in (quote.get("close") or []) if c is not None]
+        if not closes:
+            raise LookupError(f"Yahoo returned no history for {symbol}")
+        return closes
 
 
 class FinnhubClient:

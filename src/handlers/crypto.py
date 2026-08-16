@@ -126,7 +126,7 @@ async def _fetch_price_history(coin_id: str) -> list[float]:
         return await gecko.get_price_history(coin_id, session)
 
 
-def build_chart_png(symbol: str, prices: list[float]) -> bytes:
+def build_chart_png(symbol: str, prices: list[float], currency: str = "USD") -> bytes:
     """PNG line chart of the price over the period (matplotlib, Agg backend)."""
     if not prices:
         raise ValueError("No data for the chart")
@@ -134,7 +134,7 @@ def build_chart_png(symbol: str, prices: list[float]) -> bytes:
     ax.plot(prices, color="#1f77b4", linewidth=1.6)
     ax.set_title(f"{symbol} — 30 days", fontsize=12)
     ax.set_xlabel("days")
-    ax.set_ylabel("USD")
+    ax.set_ylabel(currency)
     ax.grid(True, alpha=0.3)
     fig.tight_layout()
     buf = io.BytesIO()

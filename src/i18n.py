@@ -187,6 +187,11 @@ _STRINGS: dict[str, dict[str, str]] = {
         ),
         "stock.news_failed": "😔 Не удалось получить новости. Попробуй позже.",
         "stock.btn.back_stock": "↩️ К акции",
+        "stock.chart.usage": "Укажи тикер, например: /chart SBER или /chart AAPL",
+        "stock.chart.failed": "😔 Не удалось получить историю цен. Попробуй позже.",
+        "stock.chart.insufficient": "😔 Недостаточно данных для графика.",
+        "stock.chart.build_failed": "😔 Не удалось построить график.",
+        "stock.chart.caption": "📊 <b>{symbol}</b> — цена за 30 дней",
         "stock.btn.back_menu": "↩️ Меню",
         # крипта / графики
         "crypto.usage": "Укажи монету, например: /crypto BTC или /crypto SOL",
@@ -715,6 +720,11 @@ _STRINGS: dict[str, dict[str, str]] = {
         "stock.news_rate_limit": ("⚠️ News API limit exceeded. Try again in a minute."),
         "stock.news_failed": "😔 Could not fetch news. Try again later.",
         "stock.btn.back_stock": "↩️ To stock",
+        "stock.chart.usage": "Provide a ticker, e.g. /chart SBER or /chart AAPL",
+        "stock.chart.failed": "😔 Could not fetch price history. Try again later.",
+        "stock.chart.insufficient": "😔 Not enough data for a chart.",
+        "stock.chart.build_failed": "😔 Could not build a chart.",
+        "stock.chart.caption": "📊 <b>{symbol}</b> — 30-day price",
         "stock.btn.back_menu": "↩️ Menu",
         # crypto / charts
         "crypto.usage": "Provide a coin, e.g. /crypto BTC or /crypto SOL",

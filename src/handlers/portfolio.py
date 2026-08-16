@@ -409,6 +409,11 @@ def _pf_quote_kb(asset_type: str, symbol: str) -> InlineKeyboardMarkup:
                 text=t("menu.btn.news"), callback_data=f"news:{symbol}"
             )
         )
+        row1.append(
+            InlineKeyboardButton(
+                text=t("menu.btn.chart"), callback_data=f"stock_chart:{symbol}"
+            )
+        )
     elif asset_type == "crypto":
         row1.append(
             InlineKeyboardButton(

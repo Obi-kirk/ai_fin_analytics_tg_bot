@@ -235,6 +235,40 @@ def test_format_stock_sign() -> None:
     assert "$100.50" in up
 
 
+def test_chart_png_currency_label() -> None:
+    from src.handlers.crypto import build_chart_png
+
+    png = build_chart_png("SBER", [100.0, 101.5, 99.0], currency="RUB")
+    assert png[:8] == b"\x89PNG\r\n\x1a\n"  # PNG signature
+    png2 = build_chart_png("AAPL", [100.0, 101.5, 99.0], currency="USD")
+    assert png2[:8] == b"\x89PNG\r\n\x1a\n"
+
+
+def test_stock_history_routing(monkeypatch) -> None:
+    from src.handlers import stock as stock_module
+    from src.services.financial_api import MoexClient, YahooClient
+
+    async def fake_moex(symbol, session, days=30):
+        return [1.0, 2.0, 3.0]
+
+    async def fake_yahoo(symbol, session, days=30):
+        return [4.0, 5.0]
+
+    monkeypatch.setattr(MoexClient, "get_price_history", staticmethod(fake_moex))
+    monkeypatch.setattr(YahooClient, "get_price_history", staticmethod(fake_yahoo))
+
+    async def run():
+        ru = await stock_module.fetch_stock_history("SBER")
+        world = await stock_module.fetch_stock_history("AAPL")
+        return ru, world
+
+    import asyncio
+
+    ru, world = asyncio.run(run())
+    assert ru == [1.0, 2.0, 3.0]  # MOEX for RU
+    assert world == [4.0, 5.0]  # Yahoo for world
+
+
 def test_format_stock_display() -> None:
     # the index is displayed with the original alias (VIX), not the ETF ticker (VIXY)
     text = format_stock(
