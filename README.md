@@ -206,4 +206,10 @@ Python 3.14 · aiogram 3 · SQLAlchemy 2 (async) · PostgreSQL · aiohttp · pyd
 
 ---
 
+## 👤 Author
+
+Created by **[Obi-kirk](https://github.com/Obi-kirk)** — built as a learning and portfolio project.
+
+---
+
 *Built for learning and demonstration. Do not invest based on information from this bot.*
