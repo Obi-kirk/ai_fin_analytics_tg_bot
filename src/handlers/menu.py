@@ -114,7 +114,38 @@ STOCKS_TOP10 = (
     "UBER",
 )
 INDEXES = ("SPX", "DJI", "VIX")
-CRYPTO_TOP10 = ("BTC", "ETH", "SOL", "XRP", "DOGE", "ADA", "LTC", "BNB", "AVAX", "DOT")
+CRYPTO_TOP10 = (
+    "BTC",
+    "ETH",
+    "SOL",
+    "XRP",
+    "DOGE",
+    "ADA",
+    "LTC",
+    "BNB",
+    "AVAX",
+    "DOT",
+    "TON",
+    "TRX",
+    "SHIB",
+    "LINK",
+    "UNI",
+    "ATOM",
+    "NEAR",
+    "POL",
+    "APT",
+    "ARB",
+    "OP",
+    "FIL",
+    "ICP",
+    "ETC",
+    "XLM",
+    "XMR",
+    "VET",
+    "HBAR",
+    "SUI",
+    "PEPE",
+)
 
 # Stock markets: "world" (Finnhub, USD) and "ru" (MOEX, RUB)
 STOCK_MARKETS = ("world", "ru")
@@ -222,7 +253,7 @@ ANALYSE_GROUPS = {
     "stock_world": tuple(STOCKS_TOP10),
     "stock_ru": tuple(RU_STOCKS_FOR_MENU),
     "index": ("SPX", "DJI", "VIX"),
-    "crypto": ("BTC", "ETH", "SOL", "XRP"),
+    "crypto": CRYPTO_TOP10,
 }
 ANALYSE_GROUP_TITLES = {
     "stock_world": "📈 Мир",
@@ -259,13 +290,7 @@ def submenu_kb(kind: str) -> InlineKeyboardMarkup:
     elif kind == "stock":
         return stock_page_kb("world", 0)
     elif kind == "crypto":
-        for i in range(0, len(CRYPTO_TOP10), 2):
-            builder.row(
-                *[
-                    InlineKeyboardButton(text=n, callback_data=f"crypto:{n}")
-                    for n in CRYPTO_TOP10[i : i + 2]
-                ]
-            )
+        return crypto_page_kb(0)
     elif kind == "analyse":
         builder.row(
             *[
@@ -277,6 +302,44 @@ def submenu_kb(kind: str) -> InlineKeyboardMarkup:
         )
     else:
         raise ValueError(f"Unknown submenu: {kind}")
+    return builder.as_markup()
+
+
+def crypto_page_kb(page: int) -> InlineKeyboardMarkup:
+    """Crypto submenu: coin buttons with pagination (10 per page)."""
+    pages = (len(CRYPTO_TOP10) + STOCKS_PER_PAGE - 1) // STOCKS_PER_PAGE
+    page = max(0, min(page, pages - 1))
+    builder = InlineKeyboardBuilder()
+    chunk = CRYPTO_TOP10[page * STOCKS_PER_PAGE : (page + 1) * STOCKS_PER_PAGE]
+    for i in range(0, len(chunk), 2):
+        builder.row(
+            *[
+                InlineKeyboardButton(text=n, callback_data=f"crypto:{n}")
+                for n in chunk[i : i + 2]
+            ]
+        )
+    if pages > 1:
+        row = []
+        if page > 0:
+            row.append(
+                InlineKeyboardButton(text="◀️", callback_data=f"crypto_page:{page - 1}")
+            )
+        row.append(
+            InlineKeyboardButton(
+                text=t("stock.page", page=page + 1, total=pages),
+                callback_data=f"crypto_page:{page}",
+            )
+        )
+        if page < pages - 1:
+            row.append(
+                InlineKeyboardButton(text="▶️", callback_data=f"crypto_page:{page + 1}")
+            )
+        builder.row(*row)
+    builder.row(
+        InlineKeyboardButton(
+            text=t("menu.btn.back_menu"), callback_data="submenu:crypto"
+        )
+    )
     return builder.as_markup()
 
 
@@ -465,6 +528,19 @@ async def on_crypto(callback: CallbackQuery, cache: TTLCache) -> None:
         format_crypto,
         render_arg=symbol,
     )
+
+
+@router.callback_query(F.data.regexp(r"^crypto_page:\d+$"))
+async def on_crypto_page(callback: CallbackQuery) -> None:
+    """Turns the crypto submenu page (◀️ / ▶️)."""
+    page = int(callback.data.split(":")[1])
+    try:
+        await callback.message.edit_text(
+            menu_title("crypto"), reply_markup=crypto_page_kb(page)
+        )
+    except TelegramBadRequest:
+        pass
+    await callback.answer()
 
 
 @router.callback_query(F.data.regexp(r"^submenu:(fx|stock|crypto|analyse)$"))

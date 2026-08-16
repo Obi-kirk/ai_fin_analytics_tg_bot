@@ -308,6 +308,31 @@ def test_stock_market_titles() -> None:
     assert "Мир" in stock_market_title("world")
 
 
+def test_crypto_list_expanded() -> None:
+    from src.handlers.crypto import COINS
+    from src.handlers.menu import CRYPTO_TOP10, crypto_page_kb
+
+    assert len(CRYPTO_TOP10) == 30
+    assert len(COINS) == 36
+    # new coins are present in the menu, analysis and digest sources
+    for sym in ("TON", "SUI", "PEPE", "XMR", "BONK"):
+        assert sym in COINS
+    for sym in ("TON", "SUI", "PEPE", "XMR"):
+        assert sym in CRYPTO_TOP10
+    # pagination: 30 coins, 10 per page
+    kb = crypto_page_kb(0)
+    data = [b.callback_data for row in kb.inline_keyboard for b in row]
+    assert "crypto_page:1" in data
+    assert "1/3" in [b.text for row in kb.inline_keyboard for b in row]
+
+
+def test_digest_crypto_matches_menu() -> None:
+    from src.handlers.menu import CRYPTO_TOP10
+    from src.services.digest import DIGEST_AVAILABLE
+
+    assert set(DIGEST_AVAILABLE["crypto"]) == set(CRYPTO_TOP10)
+
+
 def test_format_crypto() -> None:
     text = format_crypto(
         "BTC", StockQuote(symbol="bitcoin", price=63942.0, change_percent=-1.84)
