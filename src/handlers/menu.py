@@ -4,6 +4,7 @@ import logging
 from collections.abc import Awaitable, Callable
 
 from aiogram import F, Router
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import (
     CallbackQuery,
     InlineKeyboardButton,
@@ -168,6 +169,25 @@ def stock_menu_text(market: str) -> str:
     return t("menu.title.stock") + " · " + stock_market_title(market)
 
 
+def stock_choice_kb() -> InlineKeyboardMarkup:
+    """Market selection screen: two buttons (world / Russian stocks)."""
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        *[
+            InlineKeyboardButton(
+                text=stock_market_title(m), callback_data=f"stock_market:{m}"
+            )
+            for m in STOCK_MARKETS
+        ]
+    )
+    return builder.as_markup()
+
+
+def stock_choice_text() -> str:
+    """Title of the market selection screen."""
+    return t("stock.market.choose")
+
+
 ANALYSE_GROUPS = {
     "stock": (
         "AAPL",
@@ -311,9 +331,7 @@ async def on_menu_button(message: Message, cache: TTLCache) -> None:
         await open_portfolio(message, cache)
         return
     if kind == "stock":
-        await message.answer(
-            stock_menu_text("world"), reply_markup=stock_page_kb("world", 0)
-        )
+        await message.answer(stock_choice_text(), reply_markup=stock_choice_kb())
         return
     await message.answer(menu_title(kind), reply_markup=submenu_kb(kind))
 
@@ -382,9 +400,13 @@ async def on_stock(callback: CallbackQuery, cache: TTLCache) -> None:
 async def on_stock_market(callback: CallbackQuery) -> None:
     """Switches the stock submenu between world and Russian markets."""
     market = callback.data.split(":", 1)[1]
-    await callback.message.edit_text(
-        stock_menu_text(market), reply_markup=stock_page_kb(market, 0)
-    )
+    text = stock_menu_text(market)
+    kb = stock_page_kb(market, 0)
+    try:
+        await callback.message.edit_text(text, reply_markup=kb)
+    except TelegramBadRequest:
+        # pressed the already-active market — nothing to change
+        pass
     await callback.answer()
 
 
@@ -393,9 +415,12 @@ async def on_stock_page(callback: CallbackQuery) -> None:
     """Turns the stock submenu page (◀️ / ▶️)."""
     _, market, raw_page = callback.data.split(":")
     page = int(raw_page)
-    await callback.message.edit_text(
-        stock_menu_text(market), reply_markup=stock_page_kb(market, page)
-    )
+    try:
+        await callback.message.edit_text(
+            stock_menu_text(market), reply_markup=stock_page_kb(market, page)
+        )
+    except TelegramBadRequest:
+        pass
     await callback.answer()
 
 
@@ -420,7 +445,7 @@ async def on_submenu(callback: CallbackQuery) -> None:
     """Returns the message to the selection submenu (the "Back" button)."""
     kind = callback.data.split(":", 1)[1]
     if kind == "stock":
-        text, kb = stock_menu_text("world"), stock_page_kb("world", 0)
+        text, kb = stock_choice_text(), stock_choice_kb()
     else:
         text, kb = menu_title(kind), submenu_kb(kind)
     await callback.message.edit_text(text, reply_markup=kb)
