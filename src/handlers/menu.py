@@ -92,6 +92,26 @@ STOCKS_TOP10 = (
     "NFLX",
     "AMD",
     "JPM",
+    "AVGO",
+    "ORCL",
+    "CRM",
+    "INTC",
+    "DIS",
+    "KO",
+    "PEP",
+    "WMT",
+    "BA",
+    "PYPL",
+    "V",
+    "MA",
+    "UNH",
+    "JNJ",
+    "PG",
+    "XOM",
+    "CVX",
+    "BAC",
+    "COST",
+    "UBER",
 )
 INDEXES = ("SPX", "DJI", "VIX")
 CRYPTO_TOP10 = ("BTC", "ETH", "SOL", "XRP", "DOGE", "ADA", "LTC", "BNB", "AVAX", "DOT")
@@ -99,6 +119,16 @@ CRYPTO_TOP10 = ("BTC", "ETH", "SOL", "XRP", "DOGE", "ADA", "LTC", "BNB", "AVAX",
 # Stock markets: "world" (Finnhub, USD) and "ru" (MOEX, RUB)
 STOCK_MARKETS = ("world", "ru")
 STOCKS_PER_PAGE = 10
+
+
+# Russian stocks for menus/AI analysis (lazy import to avoid a cycle)
+def _ru_stocks() -> tuple[str, ...]:
+    from src.handlers.stock import RU_STOCKS
+
+    return RU_STOCKS
+
+
+RU_STOCKS_FOR_MENU = _ru_stocks()
 
 
 def stock_market_title(market: str) -> str:
@@ -189,21 +219,14 @@ def stock_choice_text() -> str:
 
 
 ANALYSE_GROUPS = {
-    "stock": (
-        "AAPL",
-        "TSLA",
-        "NVDA",
-        "MSFT",
-        "GOOGL",
-        "AMZN",
-        "META",
-        "AMD",
-    ),
+    "stock_world": tuple(STOCKS_TOP10),
+    "stock_ru": tuple(RU_STOCKS_FOR_MENU),
     "index": ("SPX", "DJI", "VIX"),
     "crypto": ("BTC", "ETH", "SOL", "XRP"),
 }
 ANALYSE_GROUP_TITLES = {
-    "stock": "📈 Акции",
+    "stock_world": "📈 Мир",
+    "stock_ru": "📈 РФ",
     "index": "📊 Индексы",
     "crypto": "🪙 Крипта",
 }
@@ -456,29 +479,76 @@ async def on_submenu(callback: CallbackQuery) -> None:
     await callback.answer()
 
 
-@router.callback_query(F.data.regexp(r"^analyse_cat:(stock|index|crypto)$"))
+@router.callback_query(
+    F.data.regexp(r"^analyse_cat:(stock_world|stock_ru|index|crypto)$")
+)
 async def on_analyse_cat(callback: CallbackQuery) -> None:
-    """Asset list of the AI analysis category."""
+    """Asset list of the AI analysis category (paginated)."""
     group = callback.data.split(":", 1)[1]
+    text, kb = analyse_cat_page(group, 0)
+    try:
+        await callback.message.edit_text(text, reply_markup=kb)
+    except TelegramBadRequest:
+        pass
+    await callback.answer()
+
+
+@router.callback_query(
+    F.data.regexp(r"^analyse_page:(stock_world|stock_ru|index|crypto):\d+$")
+)
+async def on_analyse_page(callback: CallbackQuery) -> None:
+    """Turns the AI analysis category page."""
+    _, group, raw_page = callback.data.split(":")
+    text, kb = analyse_cat_page(group, int(raw_page))
+    try:
+        await callback.message.edit_text(text, reply_markup=kb)
+    except TelegramBadRequest:
+        pass
+    await callback.answer()
+
+
+def analyse_cat_page(group: str, page: int) -> tuple[str, InlineKeyboardMarkup]:
+    """Text and keyboard of one AI analysis category page (10 items each)."""
+    symbols = list(ANALYSE_GROUPS[group])
+    pages = (len(symbols) + STOCKS_PER_PAGE - 1) // STOCKS_PER_PAGE
+    page = max(0, min(page, pages - 1))
     builder = InlineKeyboardBuilder()
-    symbols = ANALYSE_GROUPS[group]
-    for i in range(0, len(symbols), 2):
+    chunk = symbols[page * STOCKS_PER_PAGE : (page + 1) * STOCKS_PER_PAGE]
+    for i in range(0, len(chunk), 2):
         builder.row(
             *[
                 InlineKeyboardButton(text=n, callback_data=f"analyse:{n}")
-                for n in symbols[i : i + 2]
+                for n in chunk[i : i + 2]
             ]
         )
+    if pages > 1:
+        row = []
+        if page > 0:
+            row.append(
+                InlineKeyboardButton(
+                    text="◀️", callback_data=f"analyse_page:{group}:{page - 1}"
+                )
+            )
+        row.append(
+            InlineKeyboardButton(
+                text=t("stock.page", page=page + 1, total=pages),
+                callback_data=f"analyse_page:{group}:{page}",
+            )
+        )
+        if page < pages - 1:
+            row.append(
+                InlineKeyboardButton(
+                    text="▶️", callback_data=f"analyse_page:{group}:{page + 1}"
+                )
+            )
+        builder.row(*row)
     builder.row(
         InlineKeyboardButton(
             text=t("menu.btn.back_categories"), callback_data="submenu:analyse"
         )
     )
-    await callback.message.edit_text(
-        t("menu.analyse_choose", title=analyse_group_title(group)),
-        reply_markup=builder.as_markup(),
-    )
-    await callback.answer()
+    text = t("menu.analyse_choose", title=analyse_group_title(group))
+    return text, builder.as_markup()
 
 
 @router.callback_query(F.data.startswith("refresh:"))

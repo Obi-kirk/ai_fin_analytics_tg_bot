@@ -39,24 +39,24 @@ from src.services.llm_service import (
 log = logging.getLogger(__name__)
 router = Router()
 
-# AI analysis submenu symbols (from menu.py) and their types
-ANALYSE_TYPES = {
-    "AAPL": "stock",
-    "TSLA": "stock",
-    "NVDA": "stock",
-    "MSFT": "stock",
-    "GOOGL": "stock",
-    "AMZN": "stock",
-    "META": "stock",
-    "AMD": "stock",
-    "SPX": "stock",
-    "DJI": "stock",
-    "VIX": "stock",
-    "BTC": "crypto",
-    "ETH": "crypto",
-    "SOL": "crypto",
-    "XRP": "crypto",
-}
+
+# AI analysis symbols: every stock/coin from the menus can be analyzed.
+# Built from the menu sets to stay in sync (lazy import to avoid cycles).
+def _analyse_types() -> dict[str, str]:
+    from src.handlers.menu import ANALYSE_GROUPS
+    from src.handlers.stock import RU_STOCKS
+
+    types: dict[str, str] = {}
+    for sym in ANALYSE_GROUPS["stock_world"] + ANALYSE_GROUPS["index"]:
+        types[sym] = "stock"
+    for sym in RU_STOCKS:
+        types[sym] = "stock"
+    for sym in ANALYSE_GROUPS["crypto"]:
+        types[sym] = "crypto"
+    return types
+
+
+ANALYSE_TYPES = _analyse_types()
 
 QUERY_RE = re.compile(r"^[\w\s.,!?()%$€¥£+-]{1,500}$")
 
