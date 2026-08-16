@@ -22,7 +22,8 @@ MAX_CONTEXT_LENGTH = 3000
 
 API_URL = "https://openrouter.ai/api/v1/chat/completions"
 
-# Patterns of prompt-injection attempts (AGENTS.md item 2)
+# Patterns of prompt-injection attempts (AGENTS.md item 2).
+# Both English and Russian variants, since the bot is bilingual.
 _INJECTION_PATTERNS = (
     re.compile(r"ignore\s+(all\s+)?previous\s+instructions", re.IGNORECASE),
     re.compile(
@@ -33,6 +34,27 @@ _INJECTION_PATTERNS = (
     re.compile(r"\byou\s+are\s+now\b", re.IGNORECASE),
     re.compile(r"\bnew\s+(system|developer)\s+prompt\b", re.IGNORECASE),
     re.compile(r"\bsystem\s+prompt\b", re.IGNORECASE),
+    re.compile(
+        r"(игнорируй|игнорир(уй|овать))\s+(все|всю|мои|предыдущие)?\s*"
+        r"(предыдущие\s+)?(инструкции|указания|промпт|задания)",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"(игнорируй|игнорировать)\s+(все\s+)?(мои\s+)?(предыдущие|прежние)\s+"
+        r"(инструкции|указания|правила|промпты)",
+        re.IGNORECASE,
+    ),
+    re.compile(r"\bты\s+(теперь|сейчас)\b", re.IGNORECASE),
+    re.compile(
+        r"\b(новый|новая|новое)\s+(системный\s+промпт|системная\s+инструкция)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(r"\bсистемный\s+промпт\b", re.IGNORECASE),
+    re.compile(
+        r"\b(забудь|отбрось|не\s+учитывай)\s+(все|всю)?\s*"
+        r"(предыдущие|прежние|прошлые)?\s*(инструкции|правила)",
+        re.IGNORECASE,
+    ),
 )
 
 
