@@ -13,6 +13,7 @@ from src.services.financial_api import (
     CBRClient,
     CoinGeckoClient,
     FinnhubClient,
+    MoexClient,
     StockQuote,
     _check_domain,
 )
@@ -32,6 +33,14 @@ CBR_XML = """<?xml version="1.0" encoding="windows-1251"?>
 
 FINNHUB_JSON = '{"c": 308.26, "dp": -1.6181, "pc": 313.33}'
 COINGECKO_JSON = '{"bitcoin": {"usd": 63942.0, "usd_24h_change": -1.84}}'
+
+# MOEX: CHANGE is the absolute RUB change; percent must be derived.
+MOEX_JSON = (
+    '{"marketdata": {"columns": ["SECID", "LAST", "CHANGE"],'
+    ' "data": [["SBER", 273.4, -4.11]]},'
+    ' "securities": {"columns": ["SECID", "SHORTNAME"],'
+    ' "data": [["SBER", "Сбербанк"]]}}'
+)
 
 
 def make_session(status: int = 200, body: str = "") -> SimpleNamespace:
@@ -90,6 +99,21 @@ async def test_finnhub_quote() -> None:
     )
     assert quote.price == pytest.approx(308.26)
     assert quote.change_percent == pytest.approx(-1.6181)
+
+
+async def test_moex_quote_with_name() -> None:
+    quote: StockQuote = await MoexClient.get_quote("SBER", make_session(body=MOEX_JSON))
+    assert quote.price == pytest.approx(273.4)
+    assert quote.name == "Сбербанк"
+    # CHANGE is RUB (-4.11) on previous 277.51 -> -1.48%
+    assert quote.change_percent == pytest.approx(-1.481, abs=0.01)
+
+
+async def test_moex_unknown_ticker() -> None:
+    with pytest.raises(LookupError):
+        await MoexClient.get_quote(
+            "XXX", make_session(body='{"marketdata": {"data": []}}')
+        )
 
 
 async def test_finnhub_requires_key() -> None:

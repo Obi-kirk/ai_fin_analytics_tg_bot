@@ -278,7 +278,8 @@ def test_is_ru_stock() -> None:
     assert is_ru_stock("SBER") is True
     assert is_ru_stock("gazp") is True  # case-insensitive
     assert is_ru_stock("AAPL") is False
-    assert len(RU_STOCKS) == 30
+    assert len(RU_STOCKS) == 46
+    assert "SMLT" in RU_STOCKS  # Самолёт (developer)
 
 
 def test_stock_page_kb_pagination() -> None:
@@ -289,15 +290,15 @@ def test_stock_page_kb_pagination() -> None:
     texts = [text for text, _ in flat]
     data = [cb for _, cb in flat]
     assert "SBER" in texts
-    assert "1/3" in texts  # 30 tickers, 10 per page
+    assert "1/5" in texts  # 46 tickers, 10 per page
     assert any(d.startswith("stock_page:ru:1") for d in data)
     assert "stock_market:ru" in data
     assert "stock_market:world" in data
 
-    last_page = stock_page_kb("ru", 2)
+    last_page = stock_page_kb("ru", 4)
     last_flat = [b.text for row in last_page.inline_keyboard for b in row]
-    assert "SFIN" in last_flat  # last of the 30
-    assert "3/3" in last_flat
+    assert "SVAV" in last_flat  # last of the 46
+    assert "5/5" in last_flat
 
 
 def test_stock_market_titles() -> None:

@@ -147,6 +147,12 @@ class MoexClient:
         change = row[2] if len(row) > 2 else 0.0
         if not price:
             raise LookupError(f"MOEX returned no price for {symbol}")
+        # MOEX CHANGE is the absolute change in RUB, not a percent:
+        # pct = change / previous_price * 100, previous = price - change.
+        change_percent = 0.0
+        prev = price - change
+        if prev:
+            change_percent = change / prev * 100
         name = None
         sec_rows = (payload.get("securities") or {}).get("data") or []
         if sec_rows and len(sec_rows[0]) > 1:
@@ -154,7 +160,7 @@ class MoexClient:
         return StockQuote(
             symbol=symbol,
             price=float(price),
-            change_percent=float(change or 0),
+            change_percent=float(change_percent),
             name=name,
         )
 
