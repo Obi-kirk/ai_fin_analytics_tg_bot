@@ -25,11 +25,19 @@ from src.database.db import get_session
 from src.database.models import DigestAsset, DigestSubscription
 from src.i18n import t
 from src.services.cache import TTLCache
-from src.services.digest import DIGEST_AVAILABLE, build_digest
+from src.services.digest import DIGEST_AVAILABLE, DIGEST_CATEGORIES, build_digest
 
 router = Router()
 
-TYPE_ICONS = {"fx": "💱", "stock": "📈", "crypto": "🪙"}
+TYPE_ICONS = {
+    "fx": "💱",
+    "stock_world": "🌍",
+    "stock_ru": "🇷🇺",
+    "index": "📊",
+    "crypto": "🪙",
+}
+
+_DIGEST_PER_PAGE = 10
 
 
 def _type_title(asset_type: str) -> str:
@@ -178,42 +186,66 @@ async def on_digest_send(callback: CallbackQuery, cache: TTLCache) -> None:
 async def _setup_kb(telegram_id: int) -> InlineKeyboardMarkup:
     """Keyboard of the set setup categories."""
     counts = {
-        t: len(await _asset_symbols(telegram_id, t)) for t in ("fx", "stock", "crypto")
+        cat: len(await _asset_symbols(telegram_id, cat)) for cat in DIGEST_CATEGORIES
     }
     builder = InlineKeyboardBuilder()
-    builder.row(
-        *[
+    for cat in DIGEST_CATEGORIES:
+        builder.row(
             InlineKeyboardButton(
                 text=(
-                    f"{TYPE_ICONS[t]} {_type_title(t)} "
-                    f"({counts[t]}/{len(DIGEST_AVAILABLE[t])})"
+                    f"{TYPE_ICONS[cat]} {_type_title(cat)} "
+                    f"({counts[cat]}/{len(DIGEST_AVAILABLE[cat])})"
                 ),
-                callback_data=f"dg:setup_cat:{t}",
+                callback_data=f"dg:setup_cat:{cat}",
             )
-            for t in ("fx", "stock", "crypto")
-        ]
-    )
+        )
     builder.row(
         InlineKeyboardButton(text=t("digest.btn.back"), callback_data="dg:back")
     )
     return builder.as_markup()
 
 
-async def _toggle_kb(telegram_id: int, asset_type: str) -> InlineKeyboardMarkup:
-    """Toggle buttons of the category assets."""
+async def _toggle_kb(
+    telegram_id: int, asset_type: str, page: int = 0
+) -> InlineKeyboardMarkup:
+    """Toggle buttons of the category assets (paginated, 10 per page)."""
     selected = await _asset_symbols(telegram_id, asset_type)
-    builder = InlineKeyboardBuilder()
     symbols = DIGEST_AVAILABLE[asset_type]
-    for i in range(0, len(symbols), 3):
+    pages = (len(symbols) + _DIGEST_PER_PAGE - 1) // _DIGEST_PER_PAGE
+    page = max(0, min(page, pages - 1))
+    builder = InlineKeyboardBuilder()
+    chunk = symbols[page * _DIGEST_PER_PAGE : (page + 1) * _DIGEST_PER_PAGE]
+    for i in range(0, len(chunk), 3):
         builder.row(
             *[
                 InlineKeyboardButton(
                     text=f"{'✅' if s in selected else '☑️'} {s}",
                     callback_data=f"dg:toggle:{asset_type}:{s}",
                 )
-                for s in symbols[i : i + 3]
+                for s in chunk[i : i + 3]
             ]
         )
+    if pages > 1:
+        row = []
+        if page > 0:
+            row.append(
+                InlineKeyboardButton(
+                    text="◀️", callback_data=f"dg:page:{asset_type}:{page - 1}"
+                )
+            )
+        row.append(
+            InlineKeyboardButton(
+                text=t("stock.page", page=page + 1, total=pages),
+                callback_data=f"dg:page:{asset_type}:{page}",
+            )
+        )
+        if page < pages - 1:
+            row.append(
+                InlineKeyboardButton(
+                    text="▶️", callback_data=f"dg:page:{asset_type}:{page + 1}"
+                )
+            )
+        builder.row(*row)
     builder.row(
         InlineKeyboardButton(text=t("digest.btn.categories"), callback_data="dg:setup")
     )
@@ -230,7 +262,9 @@ async def on_digest_setup(callback: CallbackQuery) -> None:
     await callback.answer()
 
 
-@router.callback_query(F.data.regexp(r"^dg:setup_cat:(fx|stock|crypto)$"))
+@router.callback_query(
+    F.data.regexp(r"^dg:setup_cat:(fx|stock_world|stock_ru|index|crypto)$")
+)
 async def on_digest_setup_cat(callback: CallbackQuery) -> None:
     """Category asset list with toggles."""
     asset_type = callback.data.split(":", 2)[2]
@@ -243,12 +277,35 @@ async def on_digest_setup_cat(callback: CallbackQuery) -> None:
             sel=len(selected),
             total=len(DIGEST_AVAILABLE[asset_type]),
         ),
-        reply_markup=await _toggle_kb(callback.from_user.id, asset_type),
+        reply_markup=await _toggle_kb(callback.from_user.id, asset_type, 0),
     )
     await callback.answer()
 
 
-@router.callback_query(F.data.regexp(r"^dg:toggle:(fx|stock|crypto):[A-Z0-9.\-]+$"))
+@router.callback_query(
+    F.data.regexp(r"^dg:page:(fx|stock_world|stock_ru|index|crypto):\d+$")
+)
+async def on_digest_page(callback: CallbackQuery) -> None:
+    """Turns the digest set category page."""
+    _, asset_type, raw_page = callback.data.split(":")
+    page = int(raw_page)
+    selected = await _asset_symbols(callback.from_user.id, asset_type)
+    await callback.message.edit_text(
+        t(
+            "digest.setup_cat",
+            icon=TYPE_ICONS[asset_type],
+            title=_type_title(asset_type),
+            sel=len(selected),
+            total=len(DIGEST_AVAILABLE[asset_type]),
+        ),
+        reply_markup=await _toggle_kb(callback.from_user.id, asset_type, page),
+    )
+    await callback.answer()
+
+
+@router.callback_query(
+    F.data.regexp(r"^dg:toggle:(fx|stock_world|stock_ru|index|crypto):[A-Z0-9.\-]+$")
+)
 async def on_digest_toggle(callback: CallbackQuery) -> None:
     """Enables / disables an asset in the personal set."""
     _, _, asset_type, symbol = callback.data.split(":", 3)
@@ -286,7 +343,7 @@ async def on_digest_toggle(callback: CallbackQuery) -> None:
             sel=len(selected),
             total=len(DIGEST_AVAILABLE[asset_type]),
         ),
-        reply_markup=await _toggle_kb(callback.from_user.id, asset_type),
+        reply_markup=await _toggle_kb(callback.from_user.id, asset_type, 0),
     )
     await callback.answer()
 

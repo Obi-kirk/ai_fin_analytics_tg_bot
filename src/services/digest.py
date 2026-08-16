@@ -31,7 +31,7 @@ DIGEST_CRYPTO = ("BTC", "ETH", "SOL", "XRP")
 # Assets available for a custom digest set (same sources as in the menu)
 DIGEST_AVAILABLE = {
     "fx": tuple(sorted(CBR_CURRENCIES)),
-    "stock": (
+    "stock_world": (
         "AAPL",
         "NVDA",
         "MSFT",
@@ -39,13 +39,83 @@ DIGEST_AVAILABLE = {
         "AMZN",
         "META",
         "TSLA",
+        "NFLX",
         "AMD",
-        "SPX",
-        "DJI",
-        "VIX",
+        "JPM",
+        "AVGO",
+        "ORCL",
+        "CRM",
+        "INTC",
+        "DIS",
+        "KO",
+        "PEP",
+        "WMT",
+        "BA",
+        "PYPL",
+        "V",
+        "MA",
+        "UNH",
+        "JNJ",
+        "PG",
+        "XOM",
+        "CVX",
+        "BAC",
+        "COST",
+        "UBER",
     ),
+    "stock_ru": (
+        "SBER",
+        "GAZP",
+        "LKOH",
+        "ROSN",
+        "NVTK",
+        "PLZL",
+        "TATN",
+        "MGNT",
+        "MOEX",
+        "SNGS",
+        "SBERP",
+        "VTBR",
+        "AFLT",
+        "GMKN",
+        "CHMF",
+        "NLMK",
+        "MAGN",
+        "PHOR",
+        "ALRS",
+        "IRAO",
+        "FEES",
+        "RTKM",
+        "RSTI",
+        "TRNFP",
+        "HYDR",
+        "ENPG",
+        "MTLR",
+        "PIKK",
+        "CBOM",
+        "SFIN",
+        "SMLT",
+        "SIBN",
+        "TATNP",
+        "SNGSP",
+        "OZON",
+        "VKCO",
+        "POSI",
+        "LENT",
+        "RASP",
+        "GCHE",
+        "BELU",
+        "TRMK",
+        "VSMO",
+        "UPRO",
+        "BSPB",
+        "SVAV",
+    ),
+    "index": ("SPX", "DJI", "VIX"),
     "crypto": ("BTC", "ETH", "SOL", "XRP", "DOGE", "ADA", "LTC", "BNB"),
 }
+
+DIGEST_CATEGORIES = tuple(DIGEST_AVAILABLE)
 
 
 async def _user_assets(telegram_id: int) -> dict[str, list[str]]:
@@ -135,22 +205,19 @@ async def build_digest(telegram_id: int, cache: TTLCache) -> str:
     user_assets = await _user_assets(telegram_id)
     sections: list[list[str]] = []
     if user_assets:
-        if user_assets.get("fx"):
-            sections.append(
-                await _section(t("digest.section.fx"), user_assets["fx"], "fx", cache)
-            )
-        if user_assets.get("stock"):
-            sections.append(
-                await _section(
-                    t("digest.section.stock"), user_assets["stock"], "stock", cache
+        section_titles = {
+            "fx": t("digest.section.fx"),
+            "stock_world": t("digest.section.stock_world"),
+            "stock_ru": t("digest.section.stock_ru"),
+            "index": t("digest.section.index"),
+            "crypto": t("digest.section.crypto"),
+        }
+        for cat in DIGEST_CATEGORIES:
+            symbols = user_assets.get(cat)
+            if symbols:
+                sections.append(
+                    await _section(section_titles[cat], symbols, cat, cache)
                 )
-            )
-        if user_assets.get("crypto"):
-            sections.append(
-                await _section(
-                    t("digest.section.crypto"), user_assets["crypto"], "crypto", cache
-                )
-            )
     else:
         sections.append(
             await _section(t("digest.section.fx_default"), list(DIGEST_FX), "fx", cache)
