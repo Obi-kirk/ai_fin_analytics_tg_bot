@@ -25,14 +25,15 @@ By continuing to use the bot, you confirm that you have read this notice and acc
 | Section | What it does |
 |---|---|
 | 💱 **Currencies** | CBR exchange rates (12 currencies, `/rate` — all at once), cross-rate pairs `/rate USD EUR`, converter with crypto `/convert` |
-| 📈 **Stocks & indexes** | Stock and index prices (SPX, DJI, VIX → ETF proxies), news `/news` |
-| 🪙 **Crypto** | Prices, trends `/trending`, top `/top`, 30-day PNG price chart `/chart` |
-| 🤖 **AI analysis** | `/analyze` — asset breakdown via LLM (quotes, profile, news, market cap, trend) |
-| 📁 **Portfolio** | Asset tracking, quantity and value, total balance, remove with confirmation |
+| 📈 **Stocks & indexes** | Two markets: **🌍 World** (30 tickers, USD) and **🇷🇺 Russia** (46 tickers, RUB via MOEX); indexes (SPX, DJI, VIX → ETF proxies); news `/news` (incl. Russian stocks via Google News) |
+| 🪙 **Crypto** | Prices, trends `/trending`, top `/top`, 30-day PNG price chart `/chart` (30 coins in the menu) |
+| 📊 **Charts** | `/chart` for crypto, world stocks (Yahoo) and Russian stocks (MOEX) — 30-day PNG with the right currency axis |
+| 🤖 **AI analysis** | `/analyze` — asset breakdown via LLM (quotes, profile, news, market cap, trend); 109 assets incl. all Russian stocks |
+| 📁 **Portfolio** | Asset tracking, quantity and value, **P&L** (profit/loss from the buy price), total balance in USD + RUB, remove with confirmation |
 | 🔔 **Alerts** | Absolute (“above 70,000”) and relative (“+5% from current”) |
-| 📰 **Digest** | Daily summary at a scheduled time + personal asset set |
+| 📰 **Digest** | Daily summary at a personal time (or 9:00 default) + custom asset set, greeting by time of day |
 | 🌐 **i18n** | Russian and English UI (`/lang` to switch, `DEFAULT_LANGUAGE` in `.env`) |
-| 🛡️ **Security** | Roles (RBAC), bans, query history, prompt-injection protection, PII masking |
+| 🛡️ **Security** | Roles (RBAC), bans, query history, prompt-injection protection (EN + RU), PII masking |
 
 ---
 
@@ -118,8 +119,10 @@ Examples:
 /rate USD EUR      — cross-rate pair (any two CBR currencies)
 /convert 100 USD RUB
 /stock SPX         — S&P 500 index (via SPY ETF)
+/stock SBER        — Russian stock (Sber, via MOEX, in RUB)
 /crypto BTC
-/chart BTC         — 30-day PNG chart
+/chart SBER        — 30-day PNG chart (RUB axis)
+/chart AAPL        — 30-day PNG chart (USD axis)
 /analyze BTC       — AI analysis
 /alert BTC 70000   — alert "above 70,000"
 /portfolio         — portfolio menu (/add BTC)
@@ -147,7 +150,7 @@ src/
 ├── handlers/             # /start /help /menu /rate /stock /crypto /analyze
 │                         # /portfolio (portfolio+alerts) /digest /admin /lang /errors
 ├── services/
-│   ├── financial_api.py  # CBR, Finnhub, CoinGecko clients
+│   ├── financial_api.py  # CBR, MOEX, Finnhub, CoinGecko, Google News, Yahoo clients
 │   ├── cache.py          # TTLCache (in-memory, with GC)
 │   ├── alerts.py         # Background price-alert loop
 │   ├── digest.py         # Daily digest builder and sender
@@ -164,6 +167,7 @@ Key decisions:
 - **TTLCache** — FX rates 1 hour, stocks/crypto 10 minutes, fundamental data 30 minutes;
 - **Alerts** — one CoinGecko batch request for the whole pool (saves the free limit), 30-minute interval;
 - **Indexes** — Finnhub does not return `^GSPC`/`^DJI`/`^VIX`, so ETF proxies are used (SPX→SPY, DJI→DIA, VIX→VIXY);
+- **Russian market** — official free MOEX ISS API (no key): quotes, candles, company names in RUB; news via Google News RSS; world stock history via Yahoo Finance (Finnhub candles are paid);
 - **i18n** — every user-facing string goes through `t()` with a per-user language (`users.language`).
 
 ---
@@ -171,7 +175,7 @@ Key decisions:
 ## 🧪 Tests
 
 ```bash
-pytest tests/ -v            # 241 tests (no network)
+pytest tests/ -v            # 262 tests (no network)
 black src/ tests/           # formatting
 isort --profile black src/ tests/
 ruff check src/ tests/      # lint
