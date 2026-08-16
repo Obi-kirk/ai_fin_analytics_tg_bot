@@ -71,7 +71,7 @@ def fake_fetchers(monkeypatch: pytest.MonkeyPatch, cache: TTLCache) -> None:
         ),
     )
     monkeypatch.setattr(module, "_fetch_company_profile", _FakeFetcher({}))
-    monkeypatch.setattr(module, "_fetch_news", _FakeFetcher([]))
+    monkeypatch.setattr(module, "fetch_news", _FakeFetcher([]))
     monkeypatch.setattr(
         module, "_fetch_market_data", _FakeFetcher({"name": "Bitcoin", "rank": 1})
     )
@@ -109,7 +109,7 @@ class TestStockContextExtra:
         )
         monkeypatch.setattr(
             module,
-            "_fetch_news",
+            "fetch_news",
             _FakeFetcher(
                 [
                     {"headline": "Apple выпустила новый продукт. Сенсация."},
@@ -134,7 +134,7 @@ class TestStockContextExtra:
             module, "_fetch_company_profile", _FakeFetcher(None, raises=RuntimeError)
         )
         monkeypatch.setattr(
-            module, "_fetch_news", _FakeFetcher(None, raises=RuntimeError)
+            module, "fetch_news", _FakeFetcher(None, raises=RuntimeError)
         )
         ctx = await _stock_context("AAPL", cache)
         assert "Цена: 250.5000" in ctx

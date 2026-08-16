@@ -16,7 +16,13 @@ from aiogram.types import CallbackQuery, Message
 
 from src.config.settings import get_settings
 from src.handlers.crypto import COIN_RE, fetch_crypto
-from src.handlers.stock import TICKER_RE, fetch_stock, resolve_stock_symbol
+from src.handlers.stock import (
+    TICKER_RE,
+    fetch_news,
+    fetch_stock,
+    is_ru_stock,
+    resolve_stock_symbol,
+)
 from src.i18n import t
 from src.services.cache import TTLCache
 from src.services.financial_api import (
@@ -67,13 +73,6 @@ async def _fetch_company_profile(symbol: str) -> dict:
     async with make_session() as session:
         client = FinnhubClient(get_settings().finnhub_api_key)
         return await client.get_company_profile(symbol, session)
-
-
-async def _fetch_news(symbol: str) -> list[dict]:
-    """Fresh Finnhub news for the ticker."""
-    async with make_session() as session:
-        client = FinnhubClient(get_settings().finnhub_api_key)
-        return await client.get_news(symbol, session)
 
 
 async def _fetch_market_data(coin_id: str) -> dict:
@@ -144,24 +143,28 @@ async def _stock_context(symbol: str, cache: TTLCache) -> str:
     profile: dict = {}
     news: list[dict] = []
     try:
-        profile = await cache.get_or_set(
-            f"stock:profile:{resolved}",
-            lambda: _fetch_company_profile(resolved),
-            settings.cache_ttl_fundamental_seconds,
-        )
         news = await cache.get_or_set(
             f"stock:news:{resolved}",
-            lambda: _fetch_news(resolved),
+            lambda: fetch_news(resolved),
             settings.cache_ttl_fundamental_seconds,
         )
+        # Russian (MOEX) stocks: no Finnhub profile — the company name
+        # comes with the quote (SHORTNAME). World stocks: Finnhub profile.
+        if not is_ru_stock(resolved):
+            profile = await cache.get_or_set(
+                f"stock:profile:{resolved}",
+                lambda: _fetch_company_profile(resolved),
+                settings.cache_ttl_fundamental_seconds,
+            )
     except Exception:  # noqa: BLE001 — extra data is not critical
         log.warning("Failed to fetch profile/news for %s", symbol)
 
-    if profile.get("name") or profile.get("finnhubIndustry"):
+    company_name = quote.name or profile.get("name")
+    if company_name or profile.get("finnhubIndustry"):
         lines.append(
             t(
                 "analyze.ctx.company",
-                name=profile.get("name") or "—",
+                name=company_name or "—",
                 industry=profile.get("finnhubIndustry") or "—",
             )
         )
