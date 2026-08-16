@@ -358,9 +358,13 @@ async def _quote_and_edit(
         await callback.answer(t("menu.fetch_failed"), show_alert=True)
         return
     text = render(quote) if render_arg is None else render(render_arg, quote)
-    await callback.message.edit_text(
-        text, reply_markup=refresh_kb(cache_key), disable_web_page_preview=True
-    )
+    try:
+        await callback.message.edit_text(
+            text, reply_markup=refresh_kb(cache_key), disable_web_page_preview=True
+        )
+    except TelegramBadRequest:
+        # the quote did not change since the last refresh — nothing to update
+        pass
     await callback.answer()
 
 
@@ -391,7 +395,7 @@ async def on_stock(callback: CallbackQuery, cache: TTLCache) -> None:
         f"stock:{symbol}",
         settings.cache_ttl_stock_seconds,
         lambda: fetch_stock(symbol),
-        lambda q: format_stock(q, display=raw),
+        lambda q: format_stock(q, display=raw, name=q.name),
         render_arg=None,
     )
 

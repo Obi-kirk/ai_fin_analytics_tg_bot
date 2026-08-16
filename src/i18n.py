@@ -162,11 +162,13 @@ _STRINGS: dict[str, dict[str, str]] = {
         ),
         "stock.fetch_failed": "😔 Не удалось получить котировку. Попробуй позже.",
         "stock.format": (
-            "📈 <b>{label}</b>\n" "Цена: <b>${price}</b>\n" "Изменение: {sign}{change}%"
+            "📈 <b>{label}</b>\n"
+            "{name}\nЦена: <b>${price}</b>\n"
+            "Изменение: {sign}{change}%"
         ),
         "stock.format_ru": (
             "📈 <b>{label}</b>\n"
-            "Цена: <b>{price} ₽</b>\n"
+            "{name}\nЦена: <b>{price} ₽</b>\n"
             "Изменение: {sign}{change}%"
         ),
         "stock.market.ru": "🇷🇺 РФ",
@@ -663,10 +665,14 @@ _STRINGS: dict[str, dict[str, str]] = {
         "stock.rate_limit": ("⚠️ Stock API limit exceeded. Try again in a minute."),
         "stock.fetch_failed": "😔 Could not fetch quote. Try again later.",
         "stock.format": (
-            "📈 <b>{label}</b>\n" "Price: <b>${price}</b>\n" "Change: {sign}{change}%"
+            "📈 <b>{label}</b>\n"
+            "{name}\nPrice: <b>${price}</b>\n"
+            "Change: {sign}{change}%"
         ),
         "stock.format_ru": (
-            "📈 <b>{label}</b>\n" "Price: <b>{price} ₽</b>\n" "Change: {sign}{change}%"
+            "📈 <b>{label}</b>\n"
+            "{name}\nPrice: <b>{price} ₽</b>\n"
+            "Change: {sign}{change}%"
         ),
         "stock.market.ru": "🇷🇺 RU",
         "stock.market.world": "🌍 World",

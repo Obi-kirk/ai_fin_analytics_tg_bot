@@ -245,6 +245,23 @@ def test_format_stock_display() -> None:
     assert "VIXY" not in text
 
 
+def test_format_stock_with_company_name() -> None:
+    text = format_stock(
+        StockQuote(symbol="AAPL", price=305.93, change_percent=0.22, name="Apple Inc"),
+        name="Apple Inc",
+    )
+    assert "Apple Inc" in text
+    assert "Apple Inc\n" in text  # name on its own line
+
+
+def test_format_ru_stock_name_from_quote() -> None:
+    text = format_stock(
+        StockQuote(symbol="SBER", price=273.4, change_percent=-4.11, name="Сбербанк"),
+    )
+    assert "Сбербанк" in text
+    assert "273.40 ₽" in text
+
+
 def test_format_ru_stock_in_rubles() -> None:
     text = format_stock(
         StockQuote(symbol="SBER", price=273.4, change_percent=-4.11),

@@ -21,6 +21,7 @@ from src.services.cache import TTLCache
 from src.services.financial_api import (
     ApiRateLimitError,
     FinnhubClient,
+    GoogleNewsClient,
     MoexClient,
     StockQuote,
     make_session,
@@ -84,6 +85,41 @@ def is_ru_stock(symbol: str) -> bool:
     return symbol.upper() in RU_STOCKS
 
 
+# Russian company names for the Google News search (ticker -> company name)
+RU_STOCK_NAMES = {
+    "SBER": "Сбербанк",
+    "GAZP": "Газпром",
+    "LKOH": "Лукойл",
+    "ROSN": "Роснефть",
+    "NVTK": "Новатэк",
+    "PLZL": "Полюс",
+    "TATN": "Татнефть",
+    "MGNT": "Магнит",
+    "MOEX": "Московская биржа",
+    "SNGS": "Сургутнефтегаз",
+    "SBERP": "Сбербанк",
+    "VTBR": "ВТБ",
+    "AFLT": "Аэрофлот",
+    "GMKN": "ГМК Норильский никель",
+    "CHMF": "Северсталь",
+    "NLMK": "НЛМК",
+    "MAGN": "ММК",
+    "PHOR": "ФосАгро",
+    "ALRS": "АЛРОСА",
+    "IRAO": "Интер РАО",
+    "FEES": "Россети",
+    "RTKM": "Ростелеком",
+    "RSTI": "Россети Урал",
+    "TRNFP": "Транснефть",
+    "HYDR": "РусГидро",
+    "ENPG": "Эн+ Груп",
+    "MTLR": "Мечел",
+    "PIKK": "ПИК",
+    "CBOM": "МКБ",
+    "SFIN": "ЭсЭфАй",
+}
+
+
 def resolve_stock_symbol(raw: str) -> str:
     """Returns the real ticker for the request: indexes -> ETF equivalents.
 
@@ -121,7 +157,11 @@ async def cmd_stock(message: Message, cache: TTLCache) -> None:
 
 
 async def fetch_stock(symbol: str) -> StockQuote:
-    """Fetches a stock quote: MOEX for Russian tickers, Finnhub otherwise."""
+    """Fetches a stock quote: MOEX for Russian tickers, Finnhub otherwise.
+
+    For world stocks the company name is fetched from the Finnhub profile
+    (best-effort: a profile failure does not fail the quote).
+    """
     if is_ru_stock(symbol):
         async with make_session() as session:
             try:
@@ -132,14 +172,30 @@ async def fetch_stock(symbol: str) -> StockQuote:
     async with make_session() as session:
         client = FinnhubClient(get_settings().finnhub_api_key)
         try:
-            return await client.get_quote(symbol, session)
+            quote = await client.get_quote(symbol, session)
         except Exception:
             log.exception("Failed to fetch quote %s from Finnhub", symbol)
             raise
+        try:
+            profile = await client.get_company_profile(symbol, session)
+            if profile.get("name"):
+                quote.name = profile["name"]
+        except Exception:  # noqa: BLE001 — profile is best-effort, quote still works
+            log.warning("Failed to fetch company profile for %s", symbol)
+        return quote
 
 
 async def fetch_news(symbol: str) -> list[dict]:
-    """Fresh Finnhub news for the ticker."""
+    """Fresh news for the ticker: Google News RSS for Russian stocks,
+    Finnhub otherwise (Finnhub does not cover Russian tickers)."""
+    if is_ru_stock(symbol):
+        company = RU_STOCK_NAMES.get(symbol.upper(), symbol)
+        async with make_session() as session:
+            try:
+                return await GoogleNewsClient.get_news(company, session)
+            except Exception:
+                log.exception("Failed to fetch news %s from Google News", symbol)
+                raise
     async with make_session() as session:
         client = FinnhubClient(get_settings().finnhub_api_key)
         try:
@@ -235,19 +291,25 @@ async def on_news_cb(callback: CallbackQuery, cache: TTLCache) -> None:
     await callback.answer()
 
 
-def format_stock(quote: StockQuote, display: str | None = None) -> str:
+def format_stock(
+    quote: StockQuote, display: str | None = None, name: str | None = None
+) -> str:
     """Formats a stock quote for Telegram (HTML).
 
     ``display`` — how to name the asset in the title (for indexes this is
     the user's original alias, e.g. SPX, while quote.symbol == SPY).
+    ``name`` — company name (from MOEX SHORTNAME or the Finnhub profile);
+    falls back to the quote's own name field.
     Russian (MOEX) stocks are shown in rubles.
     """
     label = display or quote.symbol
+    company = name or quote.name or ""
     sign = "+" if quote.change_percent >= 0 else ""
     if is_ru_stock(label):
         return t(
             "stock.format_ru",
             label=label,
+            name=company,
             price=f"{quote.price:,.2f}",
             sign=sign,
             change=f"{quote.change_percent:.2f}",
@@ -255,6 +317,7 @@ def format_stock(quote: StockQuote, display: str | None = None) -> str:
     return t(
         "stock.format",
         label=label,
+        name=company,
         price=f"{quote.price:,.2f}",
         sign=sign,
         change=f"{quote.change_percent:.2f}",

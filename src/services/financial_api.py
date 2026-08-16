@@ -18,6 +18,7 @@ log = logging.getLogger(__name__)
 ALLOWED_API_DOMAINS = (
     "www.cbr.ru",
     "iss.moex.com",  # MOEX ISS — Russian stocks (free, no key)
+    "news.google.com",  # Google News RSS — Russian stock news (free, no key)
     "api.coingecko.com",
     "finnhub.io",
     "openrouter.ai",  # and api.openrouter.ai
@@ -83,6 +84,7 @@ class StockQuote:
     symbol: str
     price: float
     change_percent: float
+    name: str | None = None  # company name (MOEX SHORTNAME, Finnhub profile)
 
 
 class CBRClient:
@@ -145,11 +147,64 @@ class MoexClient:
         change = row[2] if len(row) > 2 else 0.0
         if not price:
             raise LookupError(f"MOEX returned no price for {symbol}")
+        name = None
+        sec_rows = (payload.get("securities") or {}).get("data") or []
+        if sec_rows and len(sec_rows[0]) > 1:
+            name = sec_rows[0][1]
         return StockQuote(
             symbol=symbol,
             price=float(price),
             change_percent=float(change or 0),
+            name=name,
         )
+
+
+class GoogleNewsClient:
+    """Russian stock news via Google News RSS (free, no key).
+
+    Finnhub does not cover Russian tickers, so MOEX stocks use this
+    search RSS: query = company name + " акции".
+    """
+
+    BASE_URL = "https://news.google.com/rss/search"
+
+    @staticmethod
+    async def get_news(
+        company: str, session: aiohttp.ClientSession, limit: int = 5
+    ) -> list[dict[str, Any]]:
+        """Latest news for the company: list of {headline, url, datetime}."""
+        params = {
+            "q": f"{company} акции",
+            "hl": "ru",
+            "gl": "RU",
+            "ceid": "RU:ru",
+        }
+        _check_domain(GoogleNewsClient.BASE_URL)
+        async with session.get(GoogleNewsClient.BASE_URL, params=params) as resp:
+            resp.raise_for_status()
+            xml = await resp.text()
+        root = ET.fromstring(xml)
+        news: list[dict[str, Any]] = []
+        for item in root.findall(".//item"):
+            headline = (item.findtext("title") or "").strip()
+            link = (item.findtext("link") or "").strip()
+            pub_date = item.findtext("pubDate")
+            if not headline or not link:
+                continue
+            ts = None
+            if pub_date:
+                try:
+                    ts = int(
+                        datetime.strptime(pub_date, "%a, %d %b %Y %H:%M:%S %Z")
+                        .replace(tzinfo=timezone.utc)
+                        .timestamp()
+                    )
+                except ValueError:
+                    ts = None
+            news.append({"headline": headline, "url": link, "datetime": ts})
+            if len(news) >= limit:
+                break
+        return news
 
 
 class FinnhubClient:
