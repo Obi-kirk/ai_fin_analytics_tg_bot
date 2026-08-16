@@ -181,14 +181,20 @@ def _pf_menu_kb(counts: dict[str, int]) -> InlineKeyboardMarkup:
         builder.row(
             InlineKeyboardButton(
                 text=t("portfolio.btn.alerts"), callback_data="pf:alerts"
-            )
+            ),
+            InlineKeyboardButton(
+                text=t("portfolio.btn.digest"), callback_data="digest:open"
+            ),
         )
     else:
         builder.row(add_btn)
         builder.row(
             InlineKeyboardButton(
                 text=t("portfolio.btn.alerts"), callback_data="pf:alerts"
-            )
+            ),
+            InlineKeyboardButton(
+                text=t("portfolio.btn.digest"), callback_data="digest:open"
+            ),
         )
     return builder.as_markup()
 

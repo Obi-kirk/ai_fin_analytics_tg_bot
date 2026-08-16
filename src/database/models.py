@@ -112,12 +112,16 @@ class DigestSubscription(Base):
 
     last_sent — the date of the last send (to skip duplicate sends on the
     same day and recover correctly after a restart).
+    digest_hour / digest_minute — the user's personal send time
+    (None — use the global settings values).
     """
 
     __tablename__ = "digest_subscriptions"
 
     telegram_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     last_sent: Mapped[date | None] = mapped_column(Date, nullable=True)
+    digest_hour: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    digest_minute: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, server_default="now()"
     )

@@ -198,19 +198,24 @@ async def build_digest(telegram_id: int, cache: TTLCache) -> str:
 
 
 async def check_digest(bot: Bot, cache: TTLCache) -> int:
-    """Sends the digest to subscribers within the time window; count sent."""
+    """Sends the digest to subscribers within their time windows; count sent."""
     settings = get_settings()
     now = datetime.now(timezone.utc).astimezone()  # local server time
-    window_start = settings.digest_hour * 60 + settings.digest_minute
-    window_end = window_start + 3  # 3-minute window so we don't miss it
-    if not (window_start <= now.hour * 60 + now.minute < window_end):
-        return 0
+    now_minutes = now.hour * 60 + now.minute
+    default_start = settings.digest_hour * 60 + settings.digest_minute
 
     sent = 0
     async for session in get_session():
         subs = (await session.execute(select(DigestSubscription))).scalars().all()
         for sub in subs:
             if sub.last_sent == now.date():
+                continue
+            start = (
+                sub.digest_hour * 60 + sub.digest_minute
+                if sub.digest_hour is not None and sub.digest_minute is not None
+                else default_start
+            )
+            if not (start <= now_minutes < start + 3):  # 3-minute window
                 continue
             try:
                 text = await build_digest(sub.telegram_id, cache)

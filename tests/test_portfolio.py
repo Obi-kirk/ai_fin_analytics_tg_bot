@@ -114,12 +114,13 @@ class TestPortfolioKb:
             "pf:add_menu",
             "pf:remove",
             "pf:alerts",
+            "digest:open",
         ]
 
     def test_menu_empty_portfolio(self) -> None:
         kb = _pf_menu_kb({"fx": 0, "stock": 0, "crypto": 0})
         data = [b.callback_data for row in kb.inline_keyboard for b in row]
-        assert data == ["pf:add_menu", "pf:alerts"]
+        assert data == ["pf:add_menu", "pf:alerts", "digest:open"]
 
     def test_mark_added_replaces_button(self) -> None:
         markup = InlineKeyboardMarkup(
