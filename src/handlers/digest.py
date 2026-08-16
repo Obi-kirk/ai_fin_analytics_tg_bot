@@ -287,7 +287,7 @@ async def on_digest_setup_cat(callback: CallbackQuery) -> None:
 )
 async def on_digest_page(callback: CallbackQuery) -> None:
     """Turns the digest set category page."""
-    _, asset_type, raw_page = callback.data.split(":")
+    _, _, asset_type, raw_page = callback.data.split(":")
     page = int(raw_page)
     selected = await _asset_symbols(callback.from_user.id, asset_type)
     await callback.message.edit_text(

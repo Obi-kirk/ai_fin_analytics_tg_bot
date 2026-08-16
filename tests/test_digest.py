@@ -30,3 +30,29 @@ class TestLine:
     def test_crypto_negative(self) -> None:
         quote = StockQuote(symbol="BTC", price=63588.5, change_percent=-1.58)
         assert _line("crypto", "BTC", quote) == "BTC — $63,588.50 (-1.58%)"
+
+
+class TestDigestCategories:
+    def test_available_has_world_ru_categories(self) -> None:
+        from src.services.digest import DIGEST_AVAILABLE, DIGEST_CATEGORIES
+
+        assert "stock_world" in DIGEST_CATEGORIES
+        assert "stock_ru" in DIGEST_CATEGORIES
+        assert "index" in DIGEST_CATEGORIES
+        assert len(DIGEST_AVAILABLE["stock_world"]) == 30
+        assert len(DIGEST_AVAILABLE["stock_ru"]) == 46
+
+    def test_page_callback_unpacking(self) -> None:
+        """Regression: dg:page:stock_ru:1 has 4 parts — must unpack to 4."""
+        data = "dg:page:stock_ru:1"
+        parts = data.split(":")
+        assert len(parts) == 4
+        _, _, asset_type, raw_page = parts
+        assert asset_type == "stock_ru"
+        assert int(raw_page) == 1
+
+    def test_toggle_callback_unpacking(self) -> None:
+        data = "dg:toggle:stock_world:AAPL"
+        _, _, asset_type, symbol = data.split(":", 3)
+        assert asset_type == "stock_world"
+        assert symbol == "AAPL"
