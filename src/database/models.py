@@ -55,6 +55,7 @@ class PortfolioItem(Base):
     asset_type: Mapped[str] = mapped_column(String(8))  # fx | stock | crypto
     symbol: Mapped[str] = mapped_column(String(16))
     quantity: Mapped[float | None] = mapped_column(Float, nullable=True)
+    buy_price: Mapped[float | None] = mapped_column(Float, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, server_default="now()"
     )

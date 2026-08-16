@@ -287,7 +287,15 @@ _STRINGS: dict[str, dict[str, str]] = {
         "portfolio.btn.remove_item": "➖ Убрать",
         "portfolio.btn.cancel": "↩️ Отмена",
         "portfolio.btn.skip": "⏭️ Пропустить",
+        "portfolio.btn.skip_price": "⏭️ Пропустить (текущая цена)",
         "portfolio.btn.added": "✅ В портфеле",
+        "portfolio.pnl": "P&L: <b>{diff} {currency}</b> ({pct}%)",
+        "portfolio.add.price_prompt": (
+            "По какой цене купил <b>{symbol}</b>? Напиши число "
+            "(например 270.5) или пропусти — возьму текущую цену."
+        ),
+        "portfolio.add.bad_price": "Это не похоже на цену. Напиши число (например 270.5).",
+        "portfolio.cmd.add.bad_price": ("Цена не распознана. Пример: /add SBER 270.5"),
         "portfolio.cat.empty": (
             "{icon} <b>{title}</b>: пусто.\n"
             "Добавить: нажми «➕ Добавить» или открой цену актива в меню "
@@ -786,7 +794,15 @@ _STRINGS: dict[str, dict[str, str]] = {
         "portfolio.btn.remove_item": "➖ Remove",
         "portfolio.btn.cancel": "↩️ Cancel",
         "portfolio.btn.skip": "⏭️ Skip",
+        "portfolio.btn.skip_price": "⏭️ Skip (current price)",
         "portfolio.btn.added": "✅ In portfolio",
+        "portfolio.pnl": "P&L: <b>{diff} {currency}</b> ({pct}%)",
+        "portfolio.add.price_prompt": (
+            "At what price did you buy <b>{symbol}</b>? Enter a number "
+            "(e.g. 270.5) or skip — I will use the current price."
+        ),
+        "portfolio.add.bad_price": "That does not look like a price. Enter a number (e.g. 270.5).",
+        "portfolio.cmd.add.bad_price": "Price not recognized. Example: /add SBER 270.5",
         "portfolio.cat.empty": (
             "{icon} <b>{title}</b>: empty.\n"
             "Add: press «➕ Add» or open the asset price in the menu "

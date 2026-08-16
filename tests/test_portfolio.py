@@ -201,6 +201,25 @@ class TestQuoteTextQuantity:
         assert "Количество" not in text
 
 
+class TestPnL:
+    def test_profit(self) -> None:
+        quote = StockQuote(symbol="AAPL", price=305.93, change_percent=0.22)
+        text = _quote_text("stock", "AAPL", quote, 5, buy_price=300)
+        assert "P&L: <b>+29.65 $" in text
+        assert "(+1.98%)" in text
+
+    def test_loss_ru_stock(self) -> None:
+        quote = StockQuote(symbol="SBER", price=273.4, change_percent=-1.48)
+        text = _quote_text("stock", "SBER", quote, 10, buy_price=280)
+        assert "P&L: <b>-66.00 ₽" in text
+        assert "(-2.36%)" in text
+
+    def test_no_buy_price_no_pnl(self) -> None:
+        quote = StockQuote(symbol="AAPL", price=305.93, change_percent=0.22)
+        text = _quote_text("stock", "AAPL", quote, 5)
+        assert "P&L" not in text
+
+
 class TestFmtQty:
     def test_integer(self) -> None:
         assert _fmt_qty(5.0) == "5"

@@ -81,10 +81,11 @@ class AlertState(StatesGroup):
 
 
 class AddState(StatesGroup):
-    """FSM for adding an arbitrary asset to the portfolio: symbol -> quantity."""
+    """FSM for adding an arbitrary asset: symbol -> quantity -> buy price."""
 
     symbol = State()
     quantity = State()
+    buy_price = State()
 
 
 class QtyState(StatesGroup):
@@ -332,6 +333,7 @@ def _quote_text(
     quote: object,
     quantity: float | None = None,
     trend: str = "",
+    buy_price: float | None = None,
 ) -> str:
     """Full asset card text (as in the main menu)."""
     if asset_type == "fx":
@@ -354,7 +356,35 @@ def _quote_text(
             value=f"{value:,.2f}",
             currency=currency,
         )
+        if buy_price is not None:
+            pnl = _pnl_line(asset_type, symbol, quote, quantity, buy_price)
+            if pnl:
+                text += f"\n{pnl}"
     return text
+
+
+def _pnl_line(
+    asset_type: str, symbol: str, quote: object, quantity: float, buy_price: float
+) -> str:
+    """Profit/loss line: current value vs the buy price (absolute + percent).
+
+    Returns "" when the current price is missing.
+    """
+    current = _per_unit(asset_type, quote)
+    if not current:
+        return ""
+    diff = (current - buy_price) * quantity
+    pct = (current / buy_price - 1) * 100 if buy_price else 0.0
+    if asset_type == "fx" or (asset_type == "stock" and is_ru_stock(symbol)):
+        currency = "₽"
+    else:
+        currency = "$"
+    return t(
+        "portfolio.pnl",
+        diff=f"{diff:+,.2f}",
+        currency=currency,
+        pct=f"{pct:+.2f}",
+    )
 
 
 def _pf_quote_kb(asset_type: str, symbol: str) -> InlineKeyboardMarkup:
@@ -409,6 +439,20 @@ async def _get_quantity(telegram_id: int, symbol: str) -> float | None:
             )
         ).scalar_one_or_none()
     return quantity
+
+
+async def _get_buy_price(telegram_id: int, symbol: str) -> float | None:
+    """Buy price of the asset in the user's portfolio (None — not set)."""
+    async for session in get_session():
+        price = (
+            await session.execute(
+                select(PortfolioItem.buy_price).where(
+                    PortfolioItem.telegram_id == telegram_id,
+                    PortfolioItem.symbol == symbol,
+                )
+            )
+        ).scalar_one_or_none()
+    return price
 
 
 def _trend_change(prices: list[float], days: int) -> float | None:
@@ -479,9 +523,10 @@ async def _quote_and_edit_pf(
         await callback.answer(t("menu.fetch_failed"), show_alert=True)
         return
     quantity = await _get_quantity(callback.from_user.id, symbol)
+    buy_price = await _get_buy_price(callback.from_user.id, symbol)
     trend = await _trend_hint(asset_type, symbol, cache)
     await callback.message.edit_text(
-        _quote_text(asset_type, symbol, quote, quantity, trend),
+        _quote_text(asset_type, symbol, quote, quantity, trend, buy_price),
         reply_markup=_pf_quote_kb(asset_type, symbol),
         disable_web_page_preview=True,
     )
@@ -649,13 +694,20 @@ def _mark_added(markup: InlineKeyboardMarkup, symbol: str) -> InlineKeyboardMark
 
 
 @router.callback_query(F.data.regexp(r"^pf:add:[A-Z0-9.\-]+$"))
-async def on_pf_add(callback: CallbackQuery) -> None:
-    """Adds an asset to the portfolio (button on the main menu card)."""
+async def on_pf_add(callback: CallbackQuery, cache: TTLCache) -> None:
+    """Adds an asset to the portfolio (button on the main menu card).
+
+    The current price from the cache is stored as the buy price.
+    """
     symbol = callback.data.split(":", 2)[2]
     asset_type = resolve_asset_type(symbol)
     if asset_type is None:
         await callback.answer(t("portfolio.add.unknown_type"), show_alert=True)
         return
+    buy_price = None
+    quote = await cache.get(_cache_key(asset_type, symbol))
+    if quote is not None:
+        buy_price = _per_unit(asset_type, quote)
     async for session in get_session():
         exists = (
             await session.execute(
@@ -671,6 +723,7 @@ async def on_pf_add(callback: CallbackQuery) -> None:
                     telegram_id=callback.from_user.id,
                     asset_type=asset_type,
                     symbol=symbol,
+                    buy_price=buy_price,
                 )
             )
             await session.commit()
@@ -693,9 +746,13 @@ async def on_pf_add(callback: CallbackQuery) -> None:
 
 
 async def _add_item(
-    telegram_id: int, symbol: str, asset_type: str, quantity: float | None
+    telegram_id: int,
+    symbol: str,
+    asset_type: str,
+    quantity: float | None,
+    buy_price: float | None = None,
 ) -> bool:
-    """Adds an asset to the portfolio; True if it was added (did not exist before)."""
+    """Adds an asset to the portfolio; True if added (was not there before)."""
     async for session in get_session():
         exists = (
             await session.execute(
@@ -712,6 +769,7 @@ async def _add_item(
                     asset_type=asset_type,
                     symbol=symbol,
                     quantity=quantity,
+                    buy_price=buy_price,
                 )
             )
             await session.commit()
@@ -732,8 +790,23 @@ async def _parse_qty(raw: str) -> float | None:
     return qty
 
 
+async def _parse_price(raw: str) -> float | None:
+    """Parses the buy price; None — invalid value."""
+    try:
+        price = float(raw.replace(",", "."))
+    except ValueError:
+        return None
+    if price <= 0:
+        return None
+    return price
+
+
 async def _added_message(
-    added: bool, symbol: str, asset_type: str, quantity: float | None
+    added: bool,
+    symbol: str,
+    asset_type: str,
+    quantity: float | None,
+    buy_price: float | None = None,
 ) -> str:
     """Message about the result of adding an asset to the portfolio."""
     qty_suffix = (
@@ -797,20 +870,48 @@ async def on_add_symbol(message: Message, state: FSMContext) -> None:
 
 
 @router.message(AddState.quantity)
-async def on_add_quantity(message: Message, state: FSMContext, cache: TTLCache) -> None:
-    """Accepts the quantity and adds the asset to the portfolio."""
+async def on_add_quantity(message: Message, state: FSMContext) -> None:
+    """Accepts the quantity and asks for the buy price."""
     qty = await _parse_qty((message.text or "").strip())
     if qty is None:
         await message.answer(t("portfolio.add.bad_qty"))
         return
+    await state.update_data(quantity=qty)
+    await state.set_state(AddState.buy_price)
+    symbol = (await state.get_data())["symbol"]
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(
+            text=t("portfolio.btn.skip_price"), callback_data="pf:add_skip"
+        ),
+        InlineKeyboardButton(
+            text=t("portfolio.btn.cancel"), callback_data="pf:add_cancel"
+        ),
+    )
+    await message.answer(
+        t("portfolio.add.price_prompt", symbol=symbol),
+        reply_markup=builder.as_markup(),
+    )
+
+
+@router.message(AddState.buy_price)
+async def on_add_buy_price(
+    message: Message, state: FSMContext, cache: TTLCache
+) -> None:
+    """Accepts the buy price and adds the asset to the portfolio."""
+    price = await _parse_price((message.text or "").strip())
+    if price is None:
+        await message.answer(t("portfolio.add.bad_price"))
+        return
     data = await state.get_data()
     symbol = data["symbol"]
     asset_type = data["asset_type"]
-    added = await _add_item(message.from_user.id, symbol, asset_type, qty)
+    qty: float | None = data.get("quantity")
+    added = await _add_item(message.from_user.id, symbol, asset_type, qty, price)
     await state.clear()
     _, kb = await _render_pf_menu(message.from_user.id, cache)
     await message.answer(
-        await _added_message(added, symbol, asset_type, qty), reply_markup=kb
+        await _added_message(added, symbol, asset_type, qty, price), reply_markup=kb
     )
 
 
@@ -1024,9 +1125,19 @@ async def on_pf_cancel_del(callback: CallbackQuery, cache: TTLCache) -> None:
 
 @router.message(Command("add"))
 async def cmd_add(message: Message, command: CommandObject) -> None:
-    """Adds an asset to the portfolio: /add BTC (or AAPL, USD)."""
-    symbol = ((command.args or "").strip().upper()).split(" ", 1)[0]
-    asset_type = resolve_asset_type(symbol) if symbol else None
+    """Adds an asset to the portfolio: /add BTC (or AAPL, USD); optional buy price."""
+    parts = (command.args or "").strip().upper().split()
+    if not parts:
+        await message.answer(t("portfolio.cmd.add.usage"))
+        return
+    symbol = parts[0]
+    buy_price = None
+    if len(parts) > 1:
+        buy_price = await _parse_price(parts[1])
+        if buy_price is None:
+            await message.answer(t("portfolio.cmd.add.bad_price"))
+            return
+    asset_type = resolve_asset_type(symbol)
     if asset_type is None:
         await message.answer(t("portfolio.cmd.add.usage"))
         return
@@ -1045,6 +1156,7 @@ async def cmd_add(message: Message, command: CommandObject) -> None:
                     telegram_id=message.from_user.id,
                     asset_type=asset_type,
                     symbol=symbol,
+                    buy_price=buy_price,
                 )
             )
             await session.commit()
