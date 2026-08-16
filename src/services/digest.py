@@ -173,10 +173,13 @@ def _line(
     asset_type: str, symbol: str, quote: object, quantity: float | None = None
 ) -> str:
     """One-line quote description for the digest."""
+    is_ru = asset_type in ("stock_ru",) or (
+        asset_type == "stock" and is_ru_stock(symbol)
+    )
     if asset_type == "fx":
         rate = f"{quote.value:.2f}" if quote.value >= 1 else f"{quote.value:.4f}"
         base = f"{quote.code} — {rate} ₽"
-    elif asset_type == "stock" and is_ru_stock(symbol):
+    elif is_ru:
         sign = "+" if quote.change_percent >= 0 else ""
         base = f"{symbol} — {quote.price:,.2f} ₽ ({sign}{quote.change_percent:.2f}%)"
     else:
@@ -188,7 +191,11 @@ def _line(
 
 
 async def _fetch_quote(asset_type: str, symbol: str, cache: TTLCache) -> object:
-    """Asset quote through the cache (same keys as in the menu)."""
+    """Asset quote through the cache (same keys as in the menu).
+
+    Digest categories map to the real sources: stock_world/index use
+    the stock source, stock_ru uses the same (routing decides MOEX).
+    """
     settings = get_settings()
     if asset_type == "fx":
         return await cache.get_or_set(
@@ -196,7 +203,7 @@ async def _fetch_quote(asset_type: str, symbol: str, cache: TTLCache) -> object:
             lambda: fetch_fx(symbol),
             settings.cache_ttl_fx_seconds,
         )
-    if asset_type == "stock":
+    if asset_type in ("stock", "stock_world", "stock_ru", "index"):
         resolved = resolve_stock_symbol(symbol)
         return await cache.get_or_set(
             f"stock:{resolved}",
@@ -226,13 +233,27 @@ async def _section(
     return lines
 
 
+def _greeting() -> str:
+    """Digest title matching the current local time of day."""
+    hour = datetime.now(timezone.utc).astimezone().hour
+    if 5 <= hour < 12:
+        key = "digest.build.title_morning"
+    elif 12 <= hour < 17:
+        key = "digest.build.title_day"
+    elif 17 <= hour < 23:
+        key = "digest.build.title_evening"
+    else:
+        key = "digest.build.title_night"
+    return t(key)
+
+
 async def build_digest(telegram_id: int, cache: TTLCache) -> str:
     """Builds the digest text for the user.
 
     If a personal set is configured (digest_assets) — only that one is
     used; otherwise the default top list. The portfolio is always added.
     """
-    lines = [t("digest.build.title") + "\n"]
+    lines = [_greeting() + "\n"]
     user_assets = await _user_assets(telegram_id)
     sections: list[list[str]] = []
     if user_assets:
